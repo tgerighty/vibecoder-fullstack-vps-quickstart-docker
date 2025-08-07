@@ -17,7 +17,7 @@ NC='\033[0m' # No Color
 # Configuration variables
 SSH_PORT=${SSH_PORT:-22}  # Change this to your desired SSH port
 ADMIN_EMAIL=""  # Set this for unattended-upgrades notifications
-ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"no"}  # Set to "yes" to restrict to Cloudflare IPs
+ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"yes"}  # Set to "yes" to restrict to Cloudflare IPs
 
 # Log file
 LOG_FILE="/var/log/vps-hardening.log"
