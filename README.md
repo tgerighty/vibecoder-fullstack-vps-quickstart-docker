@@ -1,0 +1,3 @@
+- `curl https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/refs/heads/main/harden.sh > harden.sh`
+- `chmod -X harden.sh`
+- `sudo bash ./harden.sh`
