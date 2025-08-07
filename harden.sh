@@ -17,7 +17,7 @@ NC='\033[0m' # No Color
 # Configuration variables
 SSH_PORT=${SSH_PORT:-22}  # Change this to your desired SSH port
 ADMIN_EMAIL=""  # Set this for unattended-upgrades notifications
-ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"yes"}  # Set to "yes" to restrict to Cloudflare IPs
+ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"no"}  # Set to "yes" to restrict to Cloudflare IPs
 
 # Log file
 LOG_FILE="/var/log/vps-hardening.log"
@@ -475,4 +475,21 @@ log_warning "4. To add a user to SSH access: usermod -a -G sshusers username"
 log_warning "5. To enable Cloudflare-only access, run: ENABLE_CLOUDFLARE=yes $0"
 log_warning "6. Configure your domain in Cloudflare dashboard separately"
 echo ""
+
+# Check if reboot is required
+if [ -f /var/run/reboot-required ]; then
+    echo ""
+    log_warning "*** SYSTEM RESTART REQUIRED ***"
+    log_warning "A reboot is required to complete the security updates."
+    log_warning "Please ensure you can SSH back in, then run: sudo reboot"
+    
+    if [ -f /var/run/reboot-required.pkgs ]; then
+        log_message "Packages requiring reboot:"
+        cat /var/run/reboot-required.pkgs
+    fi
+    echo ""
+else
+    log_message "No reboot required at this time."
+fi
+
 log_message "Log file: $LOG_FILE"
