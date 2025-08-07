@@ -116,10 +116,26 @@ if [ -z "$CURRENT_USER" ]; then
     CURRENT_USER=$(logname 2>/dev/null || echo "")
 fi
 
+# Add users to sshusers group
 if [ ! -z "$CURRENT_USER" ] && [ "$CURRENT_USER" != "root" ]; then
     usermod -a -G sshusers "$CURRENT_USER"
     log_message "Added $CURRENT_USER to sshusers group"
 fi
+
+# Always add root to sshusers (even if not recommended)
+usermod -a -G sshusers root
+log_message "Added root to sshusers group"
+
+# Check for common cloud users and add them too
+for user in ubuntu debian admin ec2-user; do
+    if id "$user" &>/dev/null; then
+        usermod -a -G sshusers "$user"
+        log_message "Added $user to sshusers group"
+    fi
+done
+
+log_warning "SSH access is now restricted to users in 'sshusers' group"
+log_warning "Current members: $(grep sshusers /etc/group)"
 
 # Configure SSH
 mkdir -p /etc/ssh/sshd_config.d/
@@ -133,7 +149,7 @@ HostKey /etc/ssh/ssh_host_ed25519_key
 HostKey /etc/ssh/ssh_host_rsa_key
 
 # Authentication
-PermitRootLogin prohibit-password
+PermitRootLogin yes
 PubkeyAuthentication yes
 PasswordAuthentication no
 PermitEmptyPasswords no
@@ -454,7 +470,9 @@ echo ""
 log_warning "IMPORTANT:"
 log_warning "1. SSH is on port $SSH_PORT - test in NEW terminal: ssh -p $SSH_PORT user@server"
 log_warning "2. Make sure you have SSH key access before disconnecting!"
-log_warning "3. To enable Cloudflare-only access, run: ENABLE_CLOUDFLARE=yes $0"
-log_warning "4. Configure your domain in Cloudflare dashboard separately"
+log_warning "3. SSH access restricted to users in 'sshusers' group: $(grep sshusers /etc/group | cut -d: -f4)"
+log_warning "4. To add a user to SSH access: usermod -a -G sshusers username"
+log_warning "5. To enable Cloudflare-only access, run: ENABLE_CLOUDFLARE=yes $0"
+log_warning "6. Configure your domain in Cloudflare dashboard separately"
 echo ""
 log_message "Log file: $LOG_FILE"
