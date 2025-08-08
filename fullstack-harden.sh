@@ -438,7 +438,7 @@ sleep 5
 # Create database and user
 log_message "Setting up PostgreSQL database..."
 sudo -u postgres psql <<EOSQL
-CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';
+CREATE USER $DB_USER WITH ENCRYPTED PASSWORD '$DB_PASS';
 CREATE DATABASE $DB_NAME OWNER $DB_USER;
 GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
 ALTER DATABASE $DB_NAME SET timezone TO 'UTC';
@@ -1137,14 +1137,14 @@ npm run build
 
 log_message "=== PART 6: PM2 PROCESS MANAGEMENT ==="
 
-# Create PM2 ecosystem file - FIXED: proper working directories
+# Create PM2 ecosystem file
 cat > $APP_DIR/ecosystem.config.js <<'EOFILE'
 module.exports = {
   apps: [
     {
       name: 'api',
       script: './server.js',
-      cwd: '/var/www/app/api',  // Fixed: correct working directory so .env is found
+      cwd: '/var/www/app/api',
       instances: 1,
       autorestart: true,
       watch: false,
