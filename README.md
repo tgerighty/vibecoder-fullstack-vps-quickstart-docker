@@ -12,6 +12,8 @@ Run through these steps to have a VPS with your domain attached to it and an ins
 curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh | sudo bash && sudo reboot
 ```
 
+> To connect with your Hetzner VPS use this command, it's the same that will work after hardening: `ssh root@VPS_IP_ADDRESS -i PATH/TO/SSH_KEY -p 22`
+
 2) Then reconnect to your VPS using the SSH key authorized in Hetzner dashboard, and run this line to install claude code and copy a initial CLAUDE.md and instructions for how to navigate and restart all services in our webserver:
 
 ```bash
