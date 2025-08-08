@@ -212,7 +212,35 @@ sudo nginx -t
 sudo systemctl restart nginx
 ```
 
-### Managing Your Apps
+### Managing Cloudflare IP Restrictions
+
+The script automatically fetches the latest Cloudflare IPs during installation and sets up daily updates. You can also manually update them:
+
+```bash
+# Manually update Cloudflare IPs (if rules seem outdated)
+sudo /usr/local/bin/update-cloudflare-ips.sh
+
+# View current Cloudflare IP lists
+cat /etc/cloudflare-ips-v4.txt
+cat /etc/cloudflare-ips-v6.txt
+
+# Check how many Cloudflare rules are active
+sudo ufw status numbered | grep -c Cloudflare
+
+# View logs from automatic updates
+sudo tail -f /var/log/cloudflare-ip-update.log
+```
+
+If Cloudflare can't reach your server (Error 521), temporarily allow all traffic to test:
+```bash
+# Temporary - allow all traffic for testing
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw reload
+
+# After testing, re-apply Cloudflare-only rules
+sudo /usr/local/bin/update-cloudflare-ips.sh
+```
 
 ```bash
 # View running applications
