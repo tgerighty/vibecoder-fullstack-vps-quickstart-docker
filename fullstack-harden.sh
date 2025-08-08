@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 # Configuration variables
 SSH_PORT=${SSH_PORT:-22}
 ADMIN_EMAIL=${ADMIN_EMAIL:-""}
-ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"yes"}
+ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"no"}
 DB_NAME="appdb"
 DB_USER="appuser"
 # Generate a safe password without problematic characters
@@ -1275,9 +1275,13 @@ EOSCRIPT
 
     chmod +x /usr/local/bin/update-cloudflare-ips.sh
     
-    # Run it to set up initial Cloudflare IPs
+    # Run it to set up initial Cloudflare IPs (don't exit on error)
     log_message "Fetching and applying latest Cloudflare IP ranges..."
-    bash /usr/local/bin/update-cloudflare-ips.sh || log_warning "Cloudflare IP update had warnings"
+    if /usr/local/bin/update-cloudflare-ips.sh; then
+        log_message "Cloudflare IPs successfully configured"
+    else
+        log_warning "Cloudflare IP update had issues but continuing..."
+    fi
     
     # Add daily cron job to keep IPs updated
     (crontab -l 2>/dev/null | grep -v update-cloudflare-ips; echo "0 3 * * * /usr/local/bin/update-cloudflare-ips.sh > /var/log/cloudflare-ip-update.log 2>&1") | crontab -
