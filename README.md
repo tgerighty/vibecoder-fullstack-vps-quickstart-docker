@@ -180,7 +180,7 @@ sudo SSH_PORT=2222 ENABLE_CLOUDFLARE=yes ADMIN_EMAIL=admin@example.com ./fullsta
 2. Add domain to Cloudflare dashboard
 3. Point DNS to your server IP
 4. Enable orange proxy cloud
-5. Set SSL/TLS to "Flexible" or "Full"
+5. Set SSL/TLS to "Flexible"
 
 ## 📁 Directory Structure
 
