@@ -1,12 +1,12 @@
 # ⚡ Vibecoder Quick Start
 
-1) Run this setup and harden script in a new clean [Ubuntu 24.04 Hetzner VPS](https://console.hetzner.com/projects):
+1) Run this setup and harden script in a new clean [Ubuntu 24.04 Hetzner VPS](https://console.hetzner.com/projects) and make sure you set at least one SSH key for the creation of VPS as it will be only way to login after running this line:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh | sudo bash && sudo reboot
 ```
 
-2) Then run this to install claude code and copy CLAUDE.md from this repo into the VPS root, which explains claude where is frontend, backend, database, and how to restart to apply new changes):
+2) Then reconnect to your VPS using the SSH key authorized in Hetzner dashboard, and run this line to install claude code and copy a initial CLAUDE.md that explains to claude where is frontend, backend, database, and how to restart to apply new changes):
 
 ```bash
 cd / && curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-hardened-fullstack-webserver/main/CLAUDE.md > CLAUDE.md && \
