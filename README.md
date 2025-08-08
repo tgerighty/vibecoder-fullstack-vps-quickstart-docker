@@ -6,7 +6,7 @@
 curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh | sudo bash && sudo reboot
 ```
 
-2) Then reconnect to your VPS using the SSH key authorized in Hetzner dashboard, and run this line to install claude code and copy a initial CLAUDE.md that explains to claude where is frontend, backend, database, and how to restart to apply new changes):
+2) Then reconnect to your VPS using the SSH key authorized in Hetzner dashboard, and run this line to install claude code and copy a initial CLAUDE.md and instructions for how to navigate and restart all services in our webserver:
 
 ```bash
 cd / && curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-hardened-fullstack-webserver/main/CLAUDE.md > CLAUDE.md && \
@@ -20,14 +20,12 @@ echo "✅ Claude Code installed! Run 'claude' to start AI-assisted coding"
 export IS_SANDBOX=1; claude --dangerously-skip-permissions
 ```
 
-### After running these commands, you get:
+4) Deploing into a domain:
 
-- ✅ **Hardened Ubuntu server** with UFW firewall, Fail2ban, and SSH key-only access
-- ✅ **Full web stack** running (Nginx + Node.js + PostgreSQL + PM2)
-- ✅ **Working application** with Next.js frontend and Express API
-- ✅ **Claude Code installed** for AI-powered development
-- ✅ **CLAUDE.md guide** at `/root/CLAUDE.md` explaining the server to Claude
-- ✅ **Cloudflare ready** with proper SSL configuration
+    1) Buy a domain
+    2) Create a [Cloudflare](https://dash.cloudflare.com/) account
+    3) Set the Cloudflare DNS urls in your domain provider
+    4) Create an A record in Cloudflare that points @ to your Hetzner server IP.
 
 # 🚀 Fullstack VPS Setup & Security Hardening Script
 
@@ -46,6 +44,15 @@ curl -O https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/full
 chmod +x fullstack-harden.sh
 sudo ./fullstack-harden.sh
 ```
+
+### After running these commands, you get:
+
+- ✅ **Hardened Ubuntu server** with UFW firewall, Fail2ban, and SSH key-only access
+- ✅ **Full web stack** running (Nginx + Node.js + PostgreSQL + PM2)
+- ✅ **Working application** with Next.js frontend and Express API
+- ✅ **Claude Code installed** for AI-powered development
+- ✅ **CLAUDE.md guide** at `/root/CLAUDE.md` explaining the server to Claude
+- ✅ **Cloudflare ready** with proper SSL configuration
 
 ## 📋 Installation Steps Explained
 
