@@ -272,10 +272,18 @@ log_message "=== PART 2: WEB SERVER SETUP ==="
 log_message "Installing Nginx..."
 apt-get install -y -q nginx
 
-# Configure Nginx - Fixed version without SSL issues
-log_message "Configuring Nginx..."
+# Generate self-signed certificate for Cloudflare Full mode
+log_message "Generating self-signed SSL certificate for secure connection..."
+mkdir -p /etc/ssl/private /etc/ssl/certs
+openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+  -keyout /etc/ssl/private/nginx-selfsigned.key \
+  -out /etc/ssl/certs/nginx-selfsigned.crt \
+  -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost" 2>/dev/null
+
+# Configure Nginx with both HTTP and HTTPS for Cloudflare Full mode
+log_message "Configuring Nginx for secure connections..."
 cat > /etc/nginx/sites-available/default <<'EOCONFIG'
-# HTTP Server - Works with Cloudflare Flexible SSL
+# HTTP Server (port 80)
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
@@ -304,7 +312,6 @@ server {
     set_real_ip_from 131.0.72.0/22;
     real_ip_header CF-Connecting-IP;
     
-    # Main app (Next.js)
     location / {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
@@ -318,7 +325,6 @@ server {
         proxy_read_timeout 90;
     }
     
-    # API routes - FIXED: proper routing
     location /api {
         proxy_pass http://localhost:3001;
         proxy_http_version 1.1;
@@ -329,7 +335,76 @@ server {
         proxy_read_timeout 90;
     }
     
-    # Health check endpoint
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+}
+
+# HTTPS Server (port 443) - For Cloudflare Full mode
+server {
+    listen 443 ssl http2 default_server;
+    listen [::]:443 ssl http2 default_server;
+    server_name _;
+    
+    # Self-signed certificate (perfect for Cloudflare Full mode)
+    ssl_certificate /etc/ssl/certs/nginx-selfsigned.crt;
+    ssl_certificate_key /etc/ssl/private/nginx-selfsigned.key;
+    
+    # Modern SSL configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    
+    # Get real IP from Cloudflare
+    set_real_ip_from 173.245.48.0/20;
+    set_real_ip_from 103.21.244.0/22;
+    set_real_ip_from 103.22.200.0/22;
+    set_real_ip_from 103.31.4.0/22;
+    set_real_ip_from 141.101.64.0/18;
+    set_real_ip_from 108.162.192.0/18;
+    set_real_ip_from 190.93.240.0/20;
+    set_real_ip_from 188.114.96.0/20;
+    set_real_ip_from 197.234.240.0/22;
+    set_real_ip_from 198.41.128.0/17;
+    set_real_ip_from 162.158.0.0/15;
+    set_real_ip_from 104.16.0.0/13;
+    set_real_ip_from 104.24.0.0/14;
+    set_real_ip_from 172.64.0.0/13;
+    set_real_ip_from 131.0.72.0/22;
+    real_ip_header CF-Connecting-IP;
+    
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 90;
+    }
+    
+    location /api {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 90;
+    }
+    
     location /health {
         access_log off;
         return 200 "healthy\n";
@@ -1246,9 +1321,11 @@ log_message "✅ Frontend: Next.js on port $APP_PORT"
 log_message "✅ Process Manager: PM2 (auto-restart enabled)"
 log_message "✅ Apps Running: $APP_STATUS/2"
 if [ "$ENABLE_CLOUDFLARE" = "yes" ]; then
-    log_message "✅ Cloudflare: IP whitelist active (Flexible SSL mode)"
+    log_message "✅ Cloudflare: IP whitelist active (Full SSL mode supported)"
+    log_message "✅ SSL: Self-signed certificate installed for secure connections"
 else
     log_message "⚠️  Cloudflare: Not configured (direct access allowed)"
+    log_message "✅ SSL: Self-signed certificate installed"
 fi
 echo ""
 
@@ -1284,8 +1361,12 @@ if [ "$ENABLE_CLOUDFLARE" = "yes" ]; then
     log_message "1. Add your domain to Cloudflare dashboard"
     log_message "2. Point A record to this server's IP: $(curl -s ifconfig.me)"
     log_message "3. Enable orange proxy cloud (Proxied)"
-    log_message "4. Set SSL/TLS to 'Flexible' (not Full or Full Strict)"
+    log_message "4. Set SSL/TLS to 'Full' (recommended) or 'Flexible'"
     log_message "5. Your site will be available at: https://your-domain.com"
+    log_message ""
+    log_info "📝 SSL NOTE:"
+    log_message "This server has a self-signed certificate installed"
+    log_message "Use 'Full' mode in Cloudflare for end-to-end encryption"
 else
     log_info "🌐 ACCESS YOUR APPLICATION:"
     log_message "Direct IP: http://$(curl -s ifconfig.me)"
