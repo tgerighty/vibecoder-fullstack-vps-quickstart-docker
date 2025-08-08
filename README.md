@@ -1,4 +1,4 @@
-# ⚡ Vibecoder Fullstack VPS Quick Start
+# Vibecoder Fullstack VPS Quick Start
 
 Run through these steps to have a VPS with your domain attached to it and an instance of claude code ready to create any app that uses:
 
