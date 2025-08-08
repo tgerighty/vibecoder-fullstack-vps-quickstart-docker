@@ -19,7 +19,6 @@ NC='\033[0m' # No Color
 SSH_PORT=${SSH_PORT:-22}
 ADMIN_EMAIL=${ADMIN_EMAIL:-""}
 ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"no"}
-DOMAIN=${DOMAIN:-"example.com"}
 DB_NAME="appdb"
 DB_USER="appuser"
 # Generate a safe password without problematic characters
@@ -473,7 +472,7 @@ const port = process.env.API_PORT || 3001;
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost', process.env.DOMAIN],
+  origin: ['http://localhost:3000', 'http://localhost'],
   credentials: true
 }));
 app.use(express.json());
