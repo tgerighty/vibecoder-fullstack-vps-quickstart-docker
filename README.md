@@ -181,6 +181,37 @@ After installation, your application lives in `/var/www/app/`:
 
 ## 🔧 Post-Installation Management
 
+### Verify Everything is Running
+
+After the script completes, verify your setup:
+
+```bash
+# Check if apps are running
+pm2 list
+
+# Check Nginx status
+sudo systemctl status nginx
+
+# Check firewall
+sudo ufw status
+
+# Test locally
+curl http://localhost
+```
+
+### If Nginx Fails to Start
+
+If you see Nginx errors about SSL certificates:
+
+```bash
+# Check Nginx error
+sudo nginx -t
+
+# If SSL certificate error, the config has already been fixed
+# Just restart Nginx
+sudo systemctl restart nginx
+```
+
 ### Managing Your Apps
 
 ```bash
