@@ -29,6 +29,12 @@ echo "✅ Claude Code installed! Run 'claude' to start AI-assisted coding"
 
 Then point cloudflare DNS to you VPS ip using the cloudflare proxy enabled, and make sure your domain in cloudflare SSL/TLS is set to FLEXIBLE.
 
+Then to run claude in complete unhinged vibe code mode use this:
+
+```bash
+export IS_SANDBOX=1; claude --dangerously-skip-permissions
+```
+
 ### After running both commands, you get:
 
 - ✅ **Hardened Ubuntu server** with UFW firewall, Fail2ban, and SSH key-only access
