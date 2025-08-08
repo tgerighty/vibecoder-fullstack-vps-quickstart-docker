@@ -1,6 +1,7 @@
 # 🚀 Fullstack VPS Setup & Security Hardening Script
 
 This comprehensive script sets up a **complete, production-ready fullstack application** with enterprise-grade security hardening. It's perfect for developers who want to deploy modern web applications quickly and securely.
+
 **Transform your Ubuntu VPS into a production-ready, secure fullstack application server in minutes**
 
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04%20|%2022.04%20|%2024.04-orange)](https://ubuntu.com/)
