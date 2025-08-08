@@ -26,6 +26,9 @@ curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-hardened-fulls
 npm install -g @anthropic-ai/claude-code && \
 echo "✅ Claude Code installed! Run 'claude' to start AI-assisted coding"
 ```
+
+Then point cloudflare DNS to you VPS ip using the cloudflare proxy enabled, and make sure your domain in cloudflare SSL/TLS is set to FLEXIBLE.
+
 ### After running both commands, you get:
 
 - ✅ **Hardened Ubuntu server** with UFW firewall, Fail2ban, and SSH key-only access
