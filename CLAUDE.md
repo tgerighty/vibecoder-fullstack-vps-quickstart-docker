@@ -294,5 +294,3 @@ Internet → Cloudflare (optional) → Nginx (port 80/443)
 | Edit API | `nano /var/www/app/api/server.js` |
 | Edit Frontend | `nano /var/www/app/frontend/pages/index.tsx` |
 | Check Firewall | `sudo ufw status` |
-
----
