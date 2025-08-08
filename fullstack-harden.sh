@@ -1061,14 +1061,14 @@ npm run build
 
 log_message "=== PART 6: PM2 PROCESS MANAGEMENT ==="
 
-# Create PM2 ecosystem file - FIXED: proper configuration
+# Create PM2 ecosystem file - FIXED: proper working directories
 cat > $APP_DIR/ecosystem.config.js <<'EOFILE'
 module.exports = {
   apps: [
     {
       name: 'api',
-      script: './api/server.js',
-      cwd: '/var/www/app',
+      script: './server.js',
+      cwd: '/var/www/app/api',  // Fixed: correct working directory so .env is found
       instances: 1,
       autorestart: true,
       watch: false,
