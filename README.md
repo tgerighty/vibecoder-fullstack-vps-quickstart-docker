@@ -1,12 +1,12 @@
 # ⚡ Vibecoder Quick Start
 
-Run this setup and harden script in a new clean [Ubuntu 24.04 Hetzner VPS](https://console.hetzner.com/projects):
+1) Run this setup and harden script in a new clean [Ubuntu 24.04 Hetzner VPS](https://console.hetzner.com/projects):
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh | sudo bash
 ```
 
-Then run this to install claude code and copy CLAUDE.md from this repo into the VPS root, which explains claude where is frontend, backend, database, and how to restart to apply new changes):
+2) Then run this to install claude code and copy CLAUDE.md from this repo into the VPS root, which explains claude where is frontend, backend, database, and how to restart to apply new changes):
 
 ```bash
 cd / && curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-hardened-fullstack-webserver/main/CLAUDE.md > CLAUDE.md && \
@@ -14,9 +14,9 @@ npm install -g @anthropic-ai/claude-code && \
 echo "✅ Claude Code installed! Run 'claude' to start AI-assisted coding"
 ```
 
-Then point cloudflare DNS to you VPS ip using the cloudflare proxy enabled, and **make sure your domain in cloudflare SSL/TLS is set to FLEXIBLE.**
+3) Then point cloudflare DNS to you VPS ip using the cloudflare proxy enabled, and **make sure your domain in cloudflare SSL/TLS is set to FLEXIBLE.**
 
-Then to run claude in completely unhinged vibe code mode use this:
+4) Then to run claude in completely unhinged vibe code mode use this:
 
 ```bash
 export IS_SANDBOX=1; claude --dangerously-skip-permissions
