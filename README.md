@@ -1,5 +1,7 @@
 # 🚀 Fullstack VPS Setup & Security Hardening Script
 
+This comprehensive script sets up a **complete, production-ready fullstack application** with enterprise-grade security hardening. It's perfect for developers who want to deploy modern web applications quickly and securely.
+
 **Transform your Ubuntu VPS into a production-ready, secure fullstack application server in minutes**
 
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04%20|%2022.04%20|%2024.04-orange)](https://ubuntu.com/)
@@ -8,10 +10,6 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Latest-blue)](https://postgresql.org/)
 [![Tailwind](https://img.shields.io/badge/Tailwind%20CSS-3.4-38bdf8)](https://tailwindcss.com/)
 [![PM2](https://img.shields.io/badge/PM2-Process%20Manager-2B3137)](https://pm2.keymetrics.io/)
-
-## 🎯 What Does This Script Do?
-
-This comprehensive script sets up a **complete, production-ready fullstack application** with enterprise-grade security hardening. It's perfect for developers who want to deploy modern web applications quickly and securely.
 
 ## ⚡ Vibecoder Quick Start
 
@@ -25,7 +23,7 @@ Then run this to install claude code and copy CLAUDE.md from this repo into the 
 npm install -g @anthropic-ai/claude-code && \
 echo "✅ Claude Code installed! Run 'claude' in any directory to start AI-assisted coding"`
 
-### ⚡ Quick Start
+## ⚡ Quick Start
 
 ```bash
 # Download and run with defaults
