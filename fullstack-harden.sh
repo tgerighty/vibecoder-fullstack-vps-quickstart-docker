@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 # Configuration variables
 SSH_PORT=${SSH_PORT:-22}
 ADMIN_EMAIL=${ADMIN_EMAIL:-""}
-ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"no"}
+ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"yes"}
 DB_NAME="appdb"
 DB_USER="appuser"
 # Generate a safe password without problematic characters
