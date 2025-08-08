@@ -17,10 +17,10 @@ This comprehensive script sets up a **complete, production-ready fullstack appli
 
 ```bash
 # Download and run with defaults
-curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/ubuntu2404.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh | sudo bash
 
 # Or download first to review
-curl -O https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/ubuntu2404.sh
+curl -O https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh
 chmod +x fullstack-harden.sh
 sudo ./fullstack-harden.sh
 ```
@@ -29,13 +29,13 @@ sudo ./fullstack-harden.sh
 
 ```bash
 # Custom SSH port
-sudo SSH_PORT=2222 ./ubuntu2404.sh
+sudo SSH_PORT=2222 ./fullstack-harden.sh
 
-# Disable Cloudflare-only access (not recommended)
-sudo ENABLE_CLOUDFLARE=no ./ubuntu2404.sh
+# Enable Cloudflare-only access (recommended)
+sudo ENABLE_CLOUDFLARE=yes ./fullstack-harden.sh
 
 # Full configuration
-sudo SSH_PORT=2222 ENABLE_CLOUDFLARE=yes ADMIN_EMAIL=admin@example.com ./ubuntu2404.sh
+sudo SSH_PORT=2222 ENABLE_CLOUDFLARE=yes ADMIN_EMAIL=admin@example.com ./fullstack-harden.sh
 ```
 
 ## 📋 Installation Steps Explained
@@ -336,6 +336,72 @@ pm2 describe frontend
 - **CPU**: 1 core minimum (2+ recommended)
 - **Network**: Public IP address
 - **Access**: Root or sudo privileges
+
+## 🤖 AI-Powered Development with Claude Code
+
+After running the main setup script, you can install Claude Code to edit your server directly with AI assistance:
+
+### Quick Setup (One-liner)
+
+```bash
+# Install Claude Code and setup AI guide
+curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-hardened-fullstack-webserver/main/CLAUDE.md | sudo tee /root/CLAUDE.md > /dev/null && \
+npm install -g @anthropic-ai/claude-code && \
+echo "✅ Claude Code installed! Run 'claude' in any directory to start AI-assisted coding"
+```
+
+### What This Does
+
+1. **Downloads CLAUDE.md** - An AI guide that explains your server architecture to Claude
+2. **Installs Claude Code** - Command-line tool for AI-powered development
+3. **Enables AI coding** - You can now use `claude` command anywhere in your server
+
+### Using Claude Code
+
+Once installed, you can use Claude directly in your server:
+
+```bash
+# Start Claude in any directory
+claude
+
+# Examples of what you can ask:
+# "Update the frontend to add a dark mode toggle"
+# "Add a new API endpoint for user authentication"
+# "Modify the database schema to include a users table"
+# "Change the UI colors to a blue theme"
+# "Add rate limiting to the API"
+```
+
+Claude will:
+- Understand your server structure (thanks to CLAUDE.md)
+- Edit files directly
+- Rebuild and restart services automatically
+- Follow security best practices
+- Show you what changes are being made
+
+### Important Notes
+
+- Claude has full context of your server setup via the CLAUDE.md file
+- All changes are made safely with PM2 managing restarts
+- Claude won't modify security settings or SSH configuration
+- You can review all changes Claude makes in real-time
+
+### Example Claude Session
+
+```bash
+cd /var/www/app
+claude
+
+# You: "Add a dark mode toggle to the frontend"
+# Claude will:
+# 1. Edit /var/www/app/frontend/pages/index.tsx
+# 2. Update Tailwind classes for dark mode
+# 3. Run npm run build
+# 4. Restart frontend with PM2
+# 5. Confirm the changes are live
+```
+
+---
 
 ## 🎯 What You Get
 
