@@ -22,7 +22,8 @@ ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"no"}
 DOMAIN=${DOMAIN:-"example.com"}
 DB_NAME="appdb"
 DB_USER="appuser"
-DB_PASS=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
+# Generate a safe password without problematic characters
+DB_PASS=$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 20)
 APP_PORT=3000
 API_PORT=3001
 
