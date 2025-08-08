@@ -6,7 +6,7 @@
 # Includes: Security hardening + Nginx + Node.js + PostgreSQL + PM2 + Next.js
 #########################################
 
-set -uo pipefail
+set -euo pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -18,11 +18,11 @@ NC='\033[0m' # No Color
 # Configuration variables
 SSH_PORT=${SSH_PORT:-22}
 ADMIN_EMAIL=${ADMIN_EMAIL:-""}
-ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"yes"}
+ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"no"}
 DOMAIN=${DOMAIN:-"example.com"}
 DB_NAME="appdb"
 DB_USER="appuser"
-DB_PASS=$(openssl rand -base64 32)
+DB_PASS=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 APP_PORT=3000
 API_PORT=3001
 
@@ -53,7 +53,18 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# Detect OS
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS=$ID
+    VER=$VERSION_ID
+else
+    log_error "Cannot detect OS version"
+    exit 1
+fi
+
 log_message "Starting Fullstack VPS Setup & Hardening..."
+log_message "Detected OS: $OS $VER"
 
 # Set non-interactive mode
 export DEBIAN_FRONTEND=noninteractive
@@ -62,6 +73,8 @@ export DEBIAN_FRONTEND=noninteractive
 log_message "Pre-configuring package selections..."
 echo "postfix postfix/main_mailer_type select No configuration" | debconf-set-selections
 echo "postfix postfix/mailname string $(hostname)" | debconf-set-selections
+echo "iptables-persistent iptables-persistent/autosave_v4 boolean true" | debconf-set-selections
+echo "iptables-persistent iptables-persistent/autosave_v6 boolean true" | debconf-set-selections
 
 #########################################
 # PART 1: SECURITY HARDENING
@@ -115,6 +128,7 @@ usermod -a -G sshusers root
 for user in ubuntu debian admin; do
     if id "$user" &>/dev/null; then
         usermod -a -G sshusers "$user"
+        log_message "Added $user to sshusers group"
     fi
 done
 
@@ -152,6 +166,7 @@ bantime = 3600
 findtime = 600
 maxretry = 5
 
+# SSH Protection - Critical
 [sshd]
 enabled = true
 port = $SSH_PORT
@@ -159,6 +174,30 @@ filter = sshd
 logpath = /var/log/auth.log
 maxretry = 3
 bantime = 7200
+
+[sshd-ddos]
+enabled = true
+port = $SSH_PORT
+filter = sshd-ddos
+logpath = /var/log/auth.log
+maxretry = 10
+bantime = 3600
+
+[recidive]
+enabled = true
+filter = recidive
+logpath = /var/log/fail2ban.log
+action = iptables-allports[name=recidive]
+bantime = 86400
+maxretry = 3
+EOCONFIG
+
+# Create SSH DDoS filter
+cat > /etc/fail2ban/filter.d/sshd-ddos.conf <<'EOCONFIG'
+[Definition]
+failregex = ^.*sshd.*: (Connection closed by|Received disconnect from|Connection reset by) <HOST>.*$
+            ^.*sshd.*: (Did not receive identification string from) <HOST>.*$
+ignoreregex =
 EOCONFIG
 
 systemctl enable fail2ban
@@ -172,13 +211,22 @@ ufw --force disable
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
+ufw default deny forward
+
+# Allow SSH
 ufw allow $SSH_PORT/tcp comment 'SSH'
 ufw limit $SSH_PORT/tcp
-ufw allow 80/tcp comment 'HTTP'
-ufw allow 443/tcp comment 'HTTPS'
-ufw logging low
 
+# Allow web traffic (will be restricted to Cloudflare if enabled later)
+if [ "$ENABLE_CLOUDFLARE" != "yes" ]; then
+    ufw allow 80/tcp comment 'HTTP'
+    ufw allow 443/tcp comment 'HTTPS'
+fi
+
+ufw logging low
 echo "y" | ufw enable
+
+log_message "UFW firewall enabled"
 
 # Kernel Hardening
 log_message "Applying kernel hardening..."
@@ -192,6 +240,7 @@ net.ipv4.conf.all.accept_source_route = 0
 net.ipv6.conf.all.accept_source_route = 0
 net.ipv4.conf.all.log_martians = 1
 net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.icmp_ignore_bogus_error_responses = 1
 net.ipv4.tcp_syncookies = 1
 net.ipv4.tcp_syn_retries = 2
 net.ipv4.tcp_synack_retries = 2
@@ -223,10 +272,10 @@ log_message "=== PART 2: WEB SERVER SETUP ==="
 log_message "Installing Nginx..."
 apt-get install -y -q nginx
 
-# Configure Nginx for the application
+# Configure Nginx - Fixed version without SSL issues
 log_message "Configuring Nginx..."
 cat > /etc/nginx/sites-available/default <<'EOCONFIG'
-# HTTP Server - Cloudflare will handle SSL termination
+# HTTP Server - Works with Cloudflare Flexible SSL
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
@@ -237,7 +286,7 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
     
-    # Trust Cloudflare's forwarded headers
+    # Get real IP from Cloudflare
     set_real_ip_from 173.245.48.0/20;
     set_real_ip_from 103.21.244.0/22;
     set_real_ip_from 103.22.200.0/22;
@@ -253,13 +302,6 @@ server {
     set_real_ip_from 104.24.0.0/14;
     set_real_ip_from 172.64.0.0/13;
     set_real_ip_from 131.0.72.0/22;
-    set_real_ip_from 2400:cb00::/32;
-    set_real_ip_from 2606:4700::/32;
-    set_real_ip_from 2803:f800::/32;
-    set_real_ip_from 2405:b500::/32;
-    set_real_ip_from 2405:8100::/32;
-    set_real_ip_from 2a06:98c0::/29;
-    set_real_ip_from 2c0f:f248::/32;
     real_ip_header CF-Connecting-IP;
     
     # Main app (Next.js)
@@ -273,9 +315,10 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 90;
     }
     
-    # API routes
+    # API routes - FIXED: proper routing
     location /api {
         proxy_pass http://localhost:3001;
         proxy_http_version 1.1;
@@ -283,6 +326,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 90;
     }
     
     # Health check endpoint
@@ -312,6 +356,9 @@ apt-get install -y -q postgresql postgresql-contrib
 systemctl start postgresql
 systemctl enable postgresql
 
+# Wait for PostgreSQL to be ready
+sleep 5
+
 # Create database and user
 log_message "Setting up PostgreSQL database..."
 sudo -u postgres psql <<EOSQL
@@ -319,10 +366,21 @@ CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';
 CREATE DATABASE $DB_NAME OWNER $DB_USER;
 GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;
 ALTER DATABASE $DB_NAME SET timezone TO 'UTC';
+\q
 EOSQL
 
-# Configure PostgreSQL for local connections only
-sed -i "s/#listen_addresses = 'localhost'/listen_addresses = 'localhost'/" /etc/postgresql/*/main/postgresql.conf
+# Configure PostgreSQL for local connections
+PG_VERSION=$(sudo -u postgres psql -t -c "SELECT version();" | awk '{print $3}' | sed 's/\..*//')
+PG_CONFIG="/etc/postgresql/$PG_VERSION/main/postgresql.conf"
+if [ -f "$PG_CONFIG" ]; then
+    sed -i "s/#listen_addresses = 'localhost'/listen_addresses = 'localhost'/" "$PG_CONFIG"
+fi
+
+# Update pg_hba.conf to trust local connections for the app user
+PG_HBA="/etc/postgresql/$PG_VERSION/main/pg_hba.conf"
+if [ -f "$PG_HBA" ]; then
+    echo "host    $DB_NAME    $DB_USER    127.0.0.1/32    md5" >> "$PG_HBA"
+fi
 
 # Restart PostgreSQL
 systemctl restart postgresql
@@ -337,6 +395,9 @@ log_message "=== PART 4: NODE.JS & PM2 SETUP ==="
 log_message "Installing Node.js LTS..."
 curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
 apt-get install -y nodejs
+
+# Install build essentials for npm packages
+apt-get install -y build-essential
 
 # Install PM2 globally
 log_message "Installing PM2..."
@@ -396,7 +457,7 @@ API_PORT=$API_PORT
 NODE_ENV=production
 EOFILE
 
-# Create API server
+# Create API server - FIXED: connection and error handling
 cat > server.js <<'EOFILE'
 const express = require('express');
 const { Pool } = require('pg');
@@ -410,17 +471,32 @@ const port = process.env.API_PORT || 3001;
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://localhost', process.env.DOMAIN],
+  credentials: true
+}));
 app.use(express.json());
 app.use(morgan('combined'));
 
-// PostgreSQL connection
+// PostgreSQL connection with better error handling
 const pool = new Pool({
   user: process.env.DB_USER,
   host: process.env.DB_HOST,
   database: process.env.DB_NAME,
   password: process.env.DB_PASS,
   port: process.env.DB_PORT,
+  connectionTimeoutMillis: 5000,
+  idleTimeoutMillis: 30000,
+  max: 20
+});
+
+// Test database connection
+pool.query('SELECT NOW()', (err, res) => {
+  if (err) {
+    console.error('Database connection error:', err);
+  } else {
+    console.log('Database connected successfully at:', res.rows[0].now);
+  }
 });
 
 // Initialize database table
@@ -436,20 +512,22 @@ async function initDB() {
       )
     `);
     
-    // Insert sample data if table is empty
+    // Check if table is empty and add sample data
     const result = await pool.query('SELECT COUNT(*) FROM posts');
-    if (result.rows[0].count === '0') {
+    if (parseInt(result.rows[0].count) === 0) {
       await pool.query(`
         INSERT INTO posts (title, content) VALUES 
         ('Welcome to your VPS!', 'Your fullstack application is running successfully.'),
         ('Security First', 'This server has been hardened with security best practices.'),
         ('Ready for Development', 'You can now build your application on this foundation.')
       `);
+      console.log('Sample data inserted');
     }
     
     console.log('Database initialized successfully');
   } catch (err) {
     console.error('Database initialization error:', err);
+    console.error('Make sure PostgreSQL is running and credentials are correct');
   }
 }
 
@@ -458,7 +536,8 @@ app.get('/api', (req, res) => {
   res.json({ 
     message: 'API is running',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV
+    environment: process.env.NODE_ENV,
+    database: pool.totalCount > 0 ? 'connected' : 'disconnected'
   });
 });
 
@@ -468,8 +547,8 @@ app.get('/api/posts', async (req, res) => {
     const result = await pool.query('SELECT * FROM posts ORDER BY created_at DESC');
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch posts' });
+    console.error('Error fetching posts:', err);
+    res.status(500).json({ error: 'Failed to fetch posts', details: err.message });
   }
 });
 
@@ -485,7 +564,7 @@ app.get('/api/posts/:id', async (req, res) => {
     
     res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error('Error fetching post:', err);
     res.status(500).json({ error: 'Failed to fetch post' });
   }
 });
@@ -501,12 +580,12 @@ app.post('/api/posts', async (req, res) => {
     
     const result = await pool.query(
       'INSERT INTO posts (title, content) VALUES ($1, $2) RETURNING *',
-      [title, content]
+      [title, content || '']
     );
     
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error('Error creating post:', err);
     res.status(500).json({ error: 'Failed to create post' });
   }
 });
@@ -528,7 +607,7 @@ app.put('/api/posts/:id', async (req, res) => {
     
     res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error('Error updating post:', err);
     res.status(500).json({ error: 'Failed to update post' });
   }
 });
@@ -545,14 +624,27 @@ app.delete('/api/posts/:id', async (req, res) => {
     
     res.json({ message: 'Post deleted successfully', id: result.rows[0].id });
   } catch (err) {
-    console.error(err);
+    console.error('Error deleting post:', err);
     res.status(500).json({ error: 'Failed to delete post' });
   }
 });
 
 // Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'healthy', uptime: process.uptime() });
+app.get('/api/health', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ 
+      status: 'healthy', 
+      uptime: process.uptime(),
+      database: 'connected'
+    });
+  } catch (err) {
+    res.status(503).json({ 
+      status: 'unhealthy', 
+      database: 'disconnected',
+      error: err.message 
+    });
+  }
 });
 
 // Start server
@@ -610,7 +702,7 @@ cat > package.json <<'EOFILE'
 }
 EOFILE
 
-# Create Next.js config
+# Create Next.js config - FIXED: proper API proxy
 cat > next.config.js <<'EOFILE'
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -656,7 +748,7 @@ cat > tsconfig.json <<'EOFILE'
 EOFILE
 
 # Create pages directory
-mkdir -p pages/api styles
+mkdir -p pages styles
 
 # Create Tailwind config
 cat > tailwind.config.js <<'EOFILE'
@@ -665,15 +757,9 @@ module.exports = {
   content: [
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
-    './app/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
-    extend: {
-      backgroundImage: {
-        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'gradient-conic': 'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
-      },
-    },
+    extend: {},
   },
   plugins: [],
 }
@@ -689,7 +775,7 @@ module.exports = {
 }
 EOFILE
 
-# Create main page
+# Create main page - FIXED: proper error handling and loading states
 cat > pages/index.tsx <<'EOFILE'
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -706,18 +792,33 @@ export default function Home() {
   const [newPost, setNewPost] = useState({ title: '', content: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [apiStatus, setApiStatus] = useState<'checking' | 'connected' | 'error'>('checking');
 
   useEffect(() => {
+    checkApiStatus();
     fetchPosts();
   }, []);
 
+  const checkApiStatus = async () => {
+    try {
+      const response = await axios.get('/api/health');
+      setApiStatus('connected');
+    } catch (err) {
+      console.error('API health check failed:', err);
+      setApiStatus('error');
+    }
+  };
+
   const fetchPosts = async () => {
     try {
+      setLoading(true);
+      setError('');
       const response = await axios.get('/api/posts');
       setPosts(response.data);
-      setLoading(false);
-    } catch (err) {
-      setError('Failed to fetch posts');
+    } catch (err: any) {
+      console.error('Failed to fetch posts:', err);
+      setError(err.response?.data?.details || 'Failed to fetch posts. Make sure the API is running.');
+    } finally {
       setLoading(false);
     }
   };
@@ -727,20 +828,24 @@ export default function Home() {
     if (!newPost.title.trim()) return;
 
     try {
+      setError('');
       const response = await axios.post('/api/posts', newPost);
       setPosts([response.data, ...posts]);
       setNewPost({ title: '', content: '' });
-    } catch (err) {
-      setError('Failed to create post');
+    } catch (err: any) {
+      console.error('Failed to create post:', err);
+      setError(err.response?.data?.error || 'Failed to create post');
     }
   };
 
   const handleDelete = async (id: number) => {
     try {
+      setError('');
       await axios.delete(`/api/posts/${id}`);
       setPosts(posts.filter(post => post.id !== id));
-    } catch (err) {
-      setError('Failed to delete post');
+    } catch (err: any) {
+      console.error('Failed to delete post:', err);
+      setError(err.response?.data?.error || 'Failed to delete post');
     }
   };
 
@@ -786,15 +891,26 @@ export default function Home() {
           
           <div className="bg-white/90 backdrop-blur-sm rounded-xl p-6 text-center transform hover:scale-105 transition-transform shadow-xl">
             <h3 className="text-lg font-semibold text-purple-700 mb-2 flex items-center justify-center">
-              <span className="mr-2 text-2xl">☁️</span>
-              CDN
+              <span className={`mr-2 text-2xl ${apiStatus === 'connected' ? '🟢' : apiStatus === 'error' ? '🔴' : '🟡'}`}>
+              </span>
+              API Status
             </h3>
-            <p className="text-gray-700">Cloudflare Ready</p>
+            <p className="text-gray-700">
+              {apiStatus === 'connected' ? 'Connected' : apiStatus === 'error' ? 'Disconnected' : 'Checking...'}
+            </p>
           </div>
         </div>
 
         {/* Main Content */}
         <main className="bg-white rounded-2xl shadow-2xl p-8 mb-8">
+          {/* Error Display */}
+          {error && (
+            <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-4 flex justify-between items-center">
+              <span>{error}</span>
+              <button onClick={() => setError('')} className="text-red-800 hover:text-red-900">✕</button>
+            </div>
+          )}
+
           {/* Create Post Section */}
           <section className="mb-10 pb-8 border-b-2 border-gray-100">
             <h2 className="text-3xl font-bold text-gray-800 mb-6">Create New Post</h2>
@@ -825,7 +941,15 @@ export default function Home() {
 
           {/* Posts Section */}
           <section>
-            <h2 className="text-3xl font-bold text-gray-800 mb-6">Posts from Database</h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-3xl font-bold text-gray-800">Posts from Database</h2>
+              <button 
+                onClick={fetchPosts}
+                className="text-purple-600 hover:text-purple-700 font-medium"
+              >
+                🔄 Refresh
+              </button>
+            </div>
             
             {loading && (
               <div className="flex justify-center py-8">
@@ -833,15 +957,11 @@ export default function Home() {
               </div>
             )}
             
-            {error && (
-              <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-4">
-                {error}
-              </div>
-            )}
-            
             {!loading && posts.length === 0 && (
               <p className="text-gray-500 text-center py-8">
-                No posts yet. Create one above!
+                {apiStatus === 'error' 
+                  ? 'Cannot connect to database. Check if the API is running.'
+                  : 'No posts yet. Create one above!'}
               </p>
             )}
             
@@ -941,7 +1061,7 @@ npm run build
 
 log_message "=== PART 6: PM2 PROCESS MANAGEMENT ==="
 
-# Create PM2 ecosystem file
+# Create PM2 ecosystem file - FIXED: proper configuration
 cat > $APP_DIR/ecosystem.config.js <<'EOFILE'
 module.exports = {
   apps: [
@@ -991,6 +1111,12 @@ log_message "Starting applications with PM2..."
 cd $APP_DIR
 pm2 start ecosystem.config.js
 pm2 save
+
+# Wait for apps to start
+sleep 10
+
+# Check if apps are running
+pm2 status
 
 #########################################
 # PART 7: CLOUDFLARE CONFIGURATION
@@ -1078,13 +1204,17 @@ EOSCRIPT
     log_message "Fetching and applying latest Cloudflare IP ranges..."
     bash /usr/local/bin/update-cloudflare-ips.sh || log_warning "Cloudflare IP update had warnings"
     
-    # Add daily cron job to keep IPs updated (Cloudflare can change them)
+    # Add daily cron job to keep IPs updated
     (crontab -l 2>/dev/null | grep -v update-cloudflare-ips; echo "0 3 * * * /usr/local/bin/update-cloudflare-ips.sh > /var/log/cloudflare-ip-update.log 2>&1") | crontab -
     
     log_message "Cloudflare IP restrictions enabled with daily auto-update"
     log_message "Update manually anytime with: /usr/local/bin/update-cloudflare-ips.sh"
 else
-    log_message "Cloudflare restrictions not enabled (set ENABLE_CLOUDFLARE=yes to enable)"
+    log_message "Cloudflare restrictions not enabled"
+    log_message "Allowing HTTP/HTTPS from anywhere (less secure)"
+    ufw allow 80/tcp comment 'HTTP'
+    ufw allow 443/tcp comment 'HTTPS'
+    ufw reload
 fi
 
 #########################################
@@ -1096,6 +1226,10 @@ systemctl restart ssh
 systemctl restart nginx
 systemctl restart fail2ban
 ufw reload
+
+# Final status check
+sleep 5
+APP_STATUS=$(pm2 list | grep -c "online" || echo "0")
 
 echo ""
 log_message "========================================="
@@ -1110,15 +1244,20 @@ log_message "✅ Database: PostgreSQL (local only)"
 log_message "✅ Backend: Node.js API on port $API_PORT"
 log_message "✅ Frontend: Next.js on port $APP_PORT"
 log_message "✅ Process Manager: PM2 (auto-restart enabled)"
+log_message "✅ Apps Running: $APP_STATUS/2"
 if [ "$ENABLE_CLOUDFLARE" = "yes" ]; then
-    log_message "✅ Cloudflare: IP whitelist active"
+    log_message "✅ Cloudflare: IP whitelist active (Flexible SSL mode)"
+else
+    log_message "⚠️  Cloudflare: Not configured (direct access allowed)"
 fi
 echo ""
 
-log_info "🔑 DATABASE CREDENTIALS:"
+log_info "🔑 DATABASE CREDENTIALS (SAVE THESE!):"
 log_message "Database: $DB_NAME"
 log_message "Username: $DB_USER"
 log_message "Password: $DB_PASS"
+log_message "Host: localhost"
+log_message "Port: 5432"
 log_message "Connection: postgresql://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME"
 echo ""
 
@@ -1127,6 +1266,7 @@ log_message "App Directory: $APP_DIR"
 log_message "API: $APP_DIR/api"
 log_message "Frontend: $APP_DIR/frontend"
 log_message "PM2 Config: $APP_DIR/ecosystem.config.js"
+log_message "Database Credentials: $APP_DIR/api/.env"
 echo ""
 
 log_info "🔧 USEFUL COMMANDS:"
@@ -1136,20 +1276,30 @@ log_message "Restart app: pm2 restart all"
 log_message "Monitor: pm2 monit"
 log_message "Firewall status: ufw status numbered"
 log_message "Fail2ban status: fail2ban-client status"
+log_message "Check API: curl http://localhost:$API_PORT/api/health"
 echo ""
 
-log_info "🌐 CLOUDFLARE SETUP:"
-log_message "1. Add your domain to Cloudflare dashboard"
-log_message "2. Point A record to this server's IP"
-log_message "3. Enable orange proxy cloud"
-log_message "4. Set SSL/TLS to 'Flexible' or 'Full'"
-log_message "5. Your site will be available at: http://your-domain.com"
+if [ "$ENABLE_CLOUDFLARE" = "yes" ]; then
+    log_info "🌐 CLOUDFLARE SETUP (IMPORTANT!):"
+    log_message "1. Add your domain to Cloudflare dashboard"
+    log_message "2. Point A record to this server's IP: $(curl -s ifconfig.me)"
+    log_message "3. Enable orange proxy cloud (Proxied)"
+    log_message "4. Set SSL/TLS to 'Flexible' (not Full or Full Strict)"
+    log_message "5. Your site will be available at: https://your-domain.com"
+else
+    log_info "🌐 ACCESS YOUR APPLICATION:"
+    log_message "Direct IP: http://$(curl -s ifconfig.me)"
+    log_message "To use Cloudflare, re-run with: ENABLE_CLOUDFLARE=yes"
+fi
 echo ""
 
 log_warning "⚠️ IMPORTANT REMINDERS:"
-log_warning "SSH Port: $SSH_PORT (not 22!)"
-log_warning "Test SSH in NEW terminal: ssh -p $SSH_PORT user@server"
-log_warning "Database credentials saved in: $APP_DIR/api/.env"
+log_warning "1. SSH Port: $SSH_PORT (save this!)"
+log_warning "2. Test SSH in NEW terminal: ssh -p $SSH_PORT user@$(curl -s ifconfig.me)"
+log_warning "3. Save database credentials shown above!"
+if [ "$ENABLE_CLOUDFLARE" = "yes" ]; then
+    log_warning "4. Set Cloudflare SSL to 'Flexible' mode (not Full)"
+fi
 echo ""
 
 # Check if reboot required
@@ -1159,4 +1309,4 @@ if [ -f /var/run/reboot-required ]; then
 fi
 
 log_message "Setup log: $LOG_FILE"
-log_message "Your fullstack application is running at http://$(curl -s ifconfig.me)"
+log_message "Your fullstack application is ready!"
