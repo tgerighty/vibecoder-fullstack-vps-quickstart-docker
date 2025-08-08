@@ -13,7 +13,19 @@
 
 This comprehensive script sets up a **complete, production-ready fullstack application** with enterprise-grade security hardening. It's perfect for developers who want to deploy modern web applications quickly and securely.
 
-## ⚡ Quick Start
+## ⚡ Vibecoder Quick Start
+
+Run this in a new clean Ubuntu 24.04 Hetzner VPS to setup and harden:
+
+`curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh | sudo bash`
+
+Then run this to install claude code and copy CLAUDE.md from this repo into the VPS root, which explains claude where is frontend, backend, database, and how to restart to apply new changes):
+
+`curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-hardened-fullstack-webserver/main/CLAUDE.md | sudo tee /root/CLAUDE.md > /dev/null && \
+npm install -g @anthropic-ai/claude-code && \
+echo "✅ Claude Code installed! Run 'claude' in any directory to start AI-assisted coding"`
+
+### ⚡ Quick Start
 
 ```bash
 # Download and run with defaults
