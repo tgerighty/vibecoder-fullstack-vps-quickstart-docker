@@ -24,7 +24,7 @@ Then run this to install claude code and copy CLAUDE.md from this repo into the 
 ```bash
 curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-hardened-fullstack-webserver/main/CLAUDE.md | sudo tee /root/CLAUDE.md > /dev/null && \
 npm install -g @anthropic-ai/claude-code && \
-echo "✅ Claude Code installed! Run 'claude' in any directory to start AI-assisted coding"
+echo "✅ Claude Code installed! Run 'claude' to start AI-assisted coding"
 ```
 
 ## ⚡ Quick Start
@@ -420,7 +420,7 @@ After running the main setup script, you can install Claude Code to edit your se
 # Install Claude Code and setup AI guide
 curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-hardened-fullstack-webserver/main/CLAUDE.md | sudo tee /root/CLAUDE.md > /dev/null && \
 npm install -g @anthropic-ai/claude-code && \
-echo "✅ Claude Code installed! Run 'claude' in any directory to start AI-assisted coding"
+echo "✅ Claude Code installed! Run 'claude' to start AI-assisted coding"
 ```
 
 ### What This Does
