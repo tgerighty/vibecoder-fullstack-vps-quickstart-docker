@@ -1,7 +1,6 @@
 # 🚀 Fullstack VPS Setup & Security Hardening Script
 
 This comprehensive script sets up a **complete, production-ready fullstack application** with enterprise-grade security hardening. It's perfect for developers who want to deploy modern web applications quickly and securely.
-
 **Transform your Ubuntu VPS into a production-ready, secure fullstack application server in minutes**
 
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04%20|%2022.04%20|%2024.04-orange)](https://ubuntu.com/)
@@ -26,8 +25,16 @@ curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-hardened-fulls
 npm install -g @anthropic-ai/claude-code && \
 echo "✅ Claude Code installed! Run 'claude' to start AI-assisted coding"
 ```
+### After running both commands, you get:
 
-## ⚡ Quick Start
+- ✅ **Hardened Ubuntu server** with UFW firewall, Fail2ban, and SSH key-only access
+- ✅ **Full web stack** running (Nginx + Node.js + PostgreSQL + PM2)
+- ✅ **Working application** with Next.js frontend and Express API
+- ✅ **Claude Code installed** for AI-powered development
+- ✅ **CLAUDE.md guide** at `/root/CLAUDE.md` explaining the server to Claude
+- ✅ **Cloudflare ready** with proper SSL configuration
+
+## ⚡ Standard Quick Start
 
 ```bash
 # Download and run with defaults
@@ -420,7 +427,7 @@ After running the main setup script, you can install Claude Code to edit your se
 # Install Claude Code and setup AI guide
 curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-hardened-fullstack-webserver/main/CLAUDE.md | sudo tee /root/CLAUDE.md > /dev/null && \
 npm install -g @anthropic-ai/claude-code && \
-echo "✅ Claude Code installed! Run 'claude' to start AI-assisted coding"
+echo "✅ Claude Code installed! Run 'claude' in any directory to start AI-assisted coding"
 ```
 
 ### What This Does
