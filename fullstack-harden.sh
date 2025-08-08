@@ -19,7 +19,7 @@ NC='\033[0m' # No Color
 SSH_PORT=${SSH_PORT:-22}
 ADMIN_EMAIL=${ADMIN_EMAIL:-""}
 ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"no"}
-DOMAIN=${DOMAIN:-"shellborn"}
+DOMAIN=${DOMAIN:-"example.com"}
 DB_NAME="appdb"
 DB_USER="appuser"
 # Generate a safe password without problematic characters
