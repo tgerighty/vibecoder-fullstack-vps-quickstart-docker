@@ -28,7 +28,7 @@ echo "✅ Claude Code installed! Run 'claude' to start AI-assisted coding"
 export IS_SANDBOX=1; claude --dangerously-skip-permissions
 ```
 
-4) Deploing into a domain:
+4) Deploying into a domain:
 
     1) Buy a domain
     2) Create a [Cloudflare](https://dash.cloudflare.com/) account
