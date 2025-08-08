@@ -1,4 +1,6 @@
-You are currently working on a **hardened Ubuntu VPS** that has been configured with a fullstack application. This document explains the server setup and how to help users manage their application.
+You are located at `/` 
+
+You are currently working on a **hardened Ubuntu VPS** that has been configured with a fullstack application.
 
 ## 🏗️ Server Architecture
 
@@ -154,6 +156,7 @@ tail -f /var/log/auth.log
 When the user asks you to update code:
 
 1. **Make the changes** in the appropriate file
+   
 2. **For API changes:**
    ```bash
    cd /var/www/app/api
@@ -293,5 +296,3 @@ Internet → Cloudflare (optional) → Nginx (port 80/443)
 | Check Firewall | `sudo ufw status` |
 
 ---
-
-**Remember**: This is a production server. Always be careful with changes, test when possible, and keep the user informed about what you're doing. The server has been hardened for security, so maintain those security practices in any modifications you make.
