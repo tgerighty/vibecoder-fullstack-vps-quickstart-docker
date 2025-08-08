@@ -17,10 +17,10 @@ This comprehensive script sets up a **complete, production-ready fullstack appli
 
 ```bash
 # Download and run with defaults
-curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/ubuntu2404.sh | sudo bash
 
 # Or download first to review
-curl -O https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh
+curl -O https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/ubuntu2404.sh
 chmod +x fullstack-harden.sh
 sudo ./fullstack-harden.sh
 ```
@@ -29,13 +29,13 @@ sudo ./fullstack-harden.sh
 
 ```bash
 # Custom SSH port
-sudo SSH_PORT=2222 ./fullstack-harden.sh
+sudo SSH_PORT=2222 ./ubuntu2404.sh
 
-# Enable Cloudflare-only access (recommended)
-sudo ENABLE_CLOUDFLARE=yes ./fullstack-harden.sh
+# Disable Cloudflare-only access (not recommended)
+sudo ENABLE_CLOUDFLARE=no ./ubuntu2404.sh
 
 # Full configuration
-sudo SSH_PORT=2222 ENABLE_CLOUDFLARE=yes ADMIN_EMAIL=admin@example.com ./fullstack-harden.sh
+sudo SSH_PORT=2222 ENABLE_CLOUDFLARE=yes ADMIN_EMAIL=admin@example.com ./ubuntu2404.sh
 ```
 
 ## 📋 Installation Steps Explained
