@@ -14,9 +14,7 @@ npm install -g @anthropic-ai/claude-code && \
 echo "✅ Claude Code installed! Run 'claude' to start AI-assisted coding"
 ```
 
-3) Then point cloudflare DNS to you VPS ip using the cloudflare proxy enabled, and **make sure your domain in cloudflare SSL/TLS is set to FLEXIBLE.**
-
-4) Then to run claude in completely unhinged vibe code mode use this:
+3) Then to run claude in completely unhinged vibe code mode use this:
 
 ```bash
 export IS_SANDBOX=1; claude --dangerously-skip-permissions
@@ -162,11 +160,10 @@ sudo ./fullstack-harden.sh
 - Prevents direct IP access attacks
 
 **To Enable Cloudflare:**
-1. Run script with `ENABLE_CLOUDFLARE=yes`
+1. Run script with `ENABLE_CLOUDFLARE=yes` (default)
 2. Add domain to Cloudflare dashboard
-3. Point DNS to your server IP
+3. Point DNS to your server IP (make an A record that points @ to your VPS ip)
 4. Enable orange proxy cloud
-5. Set SSL/TLS to "Flexible"
 
 ## 📁 Directory Structure
 
