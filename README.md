@@ -39,4 +39,6 @@ export IS_SANDBOX=1; claude --dangerously-skip-permissions
 
 MIT License - Use freely for personal or commercial projects.
 
+---
+
 **Remember**: This script provides a strong foundation, but ongoing maintenance, updates, and monitoring are essential for production systems. Always follow security best practices and keep your applications updated.
