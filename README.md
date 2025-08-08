@@ -1,19 +1,6 @@
-# 🚀 Fullstack VPS Setup & Security Hardening Script
+# ⚡ Vibecoder Quick Start
 
-This comprehensive script sets up a **complete, production-ready fullstack application** with enterprise-grade security hardening. It's perfect for developers who want to deploy modern web applications quickly and securely.
-
-**Transform your Ubuntu VPS into a production-ready, secure fullstack application server in minutes**
-
-[![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04%20|%2022.04%20|%2024.04-orange)](https://ubuntu.com/)
-[![Node.js](https://img.shields.io/badge/Node.js-LTS-green)](https://nodejs.org/)
-[![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Latest-blue)](https://postgresql.org/)
-[![Tailwind](https://img.shields.io/badge/Tailwind%20CSS-3.4-38bdf8)](https://tailwindcss.com/)
-[![PM2](https://img.shields.io/badge/PM2-Process%20Manager-2B3137)](https://pm2.keymetrics.io/)
-
-## ⚡ Vibecoder Quick Start
-
-Run this in a new clean Ubuntu 24.04 Hetzner VPS to setup and harden:
+Run this setup and harden script in a new clean [Ubuntu 24.04 Hetzner VPS](https://console.hetzner.com/projects):
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh | sudo bash
@@ -27,15 +14,15 @@ npm install -g @anthropic-ai/claude-code && \
 echo "✅ Claude Code installed! Run 'claude' to start AI-assisted coding"
 ```
 
-Then point cloudflare DNS to you VPS ip using the cloudflare proxy enabled, and make sure your domain in cloudflare SSL/TLS is set to FLEXIBLE.
+Then point cloudflare DNS to you VPS ip using the cloudflare proxy enabled, and **make sure your domain in cloudflare SSL/TLS is set to FLEXIBLE.**
 
-Then to run claude in complete unhinged vibe code mode use this:
+Then to run claude in completely unhinged vibe code mode use this:
 
 ```bash
 export IS_SANDBOX=1; claude --dangerously-skip-permissions
 ```
 
-### After running both commands, you get:
+### After running these commands, you get:
 
 - ✅ **Hardened Ubuntu server** with UFW firewall, Fail2ban, and SSH key-only access
 - ✅ **Full web stack** running (Nginx + Node.js + PostgreSQL + PM2)
@@ -43,6 +30,12 @@ export IS_SANDBOX=1; claude --dangerously-skip-permissions
 - ✅ **Claude Code installed** for AI-powered development
 - ✅ **CLAUDE.md guide** at `/root/CLAUDE.md` explaining the server to Claude
 - ✅ **Cloudflare ready** with proper SSL configuration
+
+# 🚀 Fullstack VPS Setup & Security Hardening Script
+
+This comprehensive script sets up a **complete, production-ready fullstack application** with enterprise-grade security hardening. It's perfect for developers who want to deploy modern web applications quickly and securely.
+
+**Transform your Ubuntu VPS into a production-ready, secure fullstack application server in minutes**
 
 ## ⚡ Standard Quick Start
 
@@ -54,19 +47,6 @@ curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fu
 curl -O https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh
 chmod +x fullstack-harden.sh
 sudo ./fullstack-harden.sh
-```
-
-### Configuration Options
-
-```bash
-# Custom SSH port
-sudo SSH_PORT=2222 ./fullstack-harden.sh
-
-# Enable Cloudflare-only access (recommended)
-sudo ENABLE_CLOUDFLARE=yes ./fullstack-harden.sh
-
-# Full configuration
-sudo SSH_PORT=2222 ENABLE_CLOUDFLARE=yes ADMIN_EMAIL=admin@example.com ./fullstack-harden.sh
 ```
 
 ## 📋 Installation Steps Explained
