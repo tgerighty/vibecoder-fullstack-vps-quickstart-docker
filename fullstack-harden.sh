@@ -1003,18 +1003,35 @@ if [ "$ENABLE_CLOUDFLARE" = "yes" ]; then
     cat > /usr/local/bin/update-cloudflare-ips.sh <<'EOSCRIPT'
 #!/bin/bash
 
-echo "Updating Cloudflare IPs..."
+echo "Fetching latest Cloudflare IP ranges..."
 
-# Get Cloudflare IPs
+# Fetch latest IPs directly from Cloudflare
 CF_IPV4=$(curl -s https://www.cloudflare.com/ips-v4)
 CF_IPV6=$(curl -s https://www.cloudflare.com/ips-v6)
 
 if [ -z "$CF_IPV4" ]; then
-    echo "Failed to fetch Cloudflare IPv4 addresses"
+    echo "Error: Failed to fetch Cloudflare IPv4 addresses"
+    echo "Trying alternative API endpoint..."
+    
+    # Try the API endpoint as fallback
+    CF_IPS=$(curl -s https://api.cloudflare.com/client/v4/ips)
+    if [ ! -z "$CF_IPS" ]; then
+        CF_IPV4=$(echo "$CF_IPS" | grep -Po '"ipv4_cidrs":\s*\[\K[^]]*' | tr -d '", ' | tr ',' '\n')
+        CF_IPV6=$(echo "$CF_IPS" | grep -Po '"ipv6_cidrs":\s*\[\K[^]]*' | tr -d '", ' | tr ',' '\n')
+    fi
+fi
+
+if [ -z "$CF_IPV4" ]; then
+    echo "Error: Could not fetch Cloudflare IPs from any source"
     exit 1
 fi
 
-# Remove old Cloudflare rules
+echo "Successfully fetched Cloudflare IPs"
+echo "IPv4 ranges: $(echo "$CF_IPV4" | wc -l)"
+echo "IPv6 ranges: $(echo "$CF_IPV6" | wc -l)"
+
+# First, remove ALL existing Cloudflare rules
+echo "Removing old Cloudflare rules..."
 while ufw status numbered | grep -q 'Cloudflare'; do
     RULE_NUM=$(ufw status numbered | grep 'Cloudflare' | head -1 | cut -d']' -f1 | cut -d'[' -f2)
     if [ ! -z "$RULE_NUM" ]; then
@@ -1024,35 +1041,50 @@ while ufw status numbered | grep -q 'Cloudflare'; do
     fi
 done
 
-# First, delete general HTTP/HTTPS rules
+# Remove any general HTTP/HTTPS rules to enforce Cloudflare-only
+echo "Removing general HTTP/HTTPS access rules..."
 ufw delete allow 80/tcp 2>/dev/null || true
 ufw delete allow 443/tcp 2>/dev/null || true
 
-# Add IPv4 ranges
+# Add Cloudflare IPv4 ranges
+echo "Adding Cloudflare IPv4 ranges..."
 for ip in $CF_IPV4; do
     ufw allow from $ip to any port 80 comment 'Cloudflare-IPv4' 2>/dev/null || true
     ufw allow from $ip to any port 443 comment 'Cloudflare-IPv4' 2>/dev/null || true
 done
 
-# Add IPv6 ranges
+# Add Cloudflare IPv6 ranges
+echo "Adding Cloudflare IPv6 ranges..."
 for ip in $CF_IPV6; do
     ufw allow from $ip to any port 80 comment 'Cloudflare-IPv6' 2>/dev/null || true
     ufw allow from $ip to any port 443 comment 'Cloudflare-IPv6' 2>/dev/null || true
 done
 
+# Reload firewall
 ufw reload
-echo "Cloudflare IPs updated - only Cloudflare can access ports 80/443"
+
+echo "Cloudflare IP update complete!"
+echo "Only Cloudflare IPs can now access ports 80 and 443"
+
+# Save the current IP lists for reference
+echo "$CF_IPV4" > /etc/cloudflare-ips-v4.txt
+echo "$CF_IPV6" > /etc/cloudflare-ips-v6.txt
+echo "IP lists saved to /etc/cloudflare-ips-v4.txt and /etc/cloudflare-ips-v6.txt"
 EOSCRIPT
 
     chmod +x /usr/local/bin/update-cloudflare-ips.sh
     
-    # Run it
-    bash /usr/local/bin/update-cloudflare-ips.sh || log_warning "Cloudflare update had warnings"
+    # Run it to set up initial Cloudflare IPs
+    log_message "Fetching and applying latest Cloudflare IP ranges..."
+    bash /usr/local/bin/update-cloudflare-ips.sh || log_warning "Cloudflare IP update had warnings"
     
-    # Add cron job
-    (crontab -l 2>/dev/null | grep -v update-cloudflare-ips; echo "0 0 * * 0 /usr/local/bin/update-cloudflare-ips.sh") | crontab -
+    # Add daily cron job to keep IPs updated (Cloudflare can change them)
+    (crontab -l 2>/dev/null | grep -v update-cloudflare-ips; echo "0 3 * * * /usr/local/bin/update-cloudflare-ips.sh > /var/log/cloudflare-ip-update.log 2>&1") | crontab -
     
-    log_message "Cloudflare IP restrictions enabled"
+    log_message "Cloudflare IP restrictions enabled with daily auto-update"
+    log_message "Update manually anytime with: /usr/local/bin/update-cloudflare-ips.sh"
+else
+    log_message "Cloudflare restrictions not enabled (set ENABLE_CLOUDFLARE=yes to enable)"
 fi
 
 #########################################
