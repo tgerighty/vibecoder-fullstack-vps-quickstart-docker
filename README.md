@@ -1,3 +1,6 @@
+> ⚠️ this project was vibecoded in a day and I`m now working on the feedback from [this post](https://x.com/MarcoWorms/status/1953924284734132356)
+> if you are going to put a real project in production I highly recommend that you invest in security 
+
 # Vibecoder Fullstack VPS Quick Start
 
 Run through these steps to have a VPS with your domain attached to it and an instance of claude code ready to create any app that uses:
