@@ -1,5 +1,5 @@
-> ⚠️ this project was vibecoded in a day and I`m now working on the feedbacks from [this post](https://x.com/MarcoWorms/status/1953924284734132356)  
-> if you are going to put a real project in production **I highly recommend that you invest in security and don't just rely on this script**
+> ⚠️ this project was vibecoded in a day and I'm now working on the feedbacks from [this post](https://x.com/MarcoWorms/status/1953924284734132356)  
+>  **I highly recommend that you invest in security for serious projects and don't just rely on this script**
 
 # Vibecoder Fullstack VPS Quick Start
 
