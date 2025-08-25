@@ -308,16 +308,42 @@ get_zone_id_from_name() {
     "https://api.cloudflare.com/client/v4/zones?name=${zone_name}" | jq -r '.result[0].id // empty'
 }
 
-cf_patch_setting() {
+# Try progressively less specific names: app.example.co.uk -> example.co.uk -> co.uk
+resolve_zone_id_for_domain() {
+  local token="$1"; shift
+  local host="$1"; shift
+  local candidate="$host"
+  while [ -n "$candidate" ]; do
+    local zid
+    zid="$(get_zone_id_from_name "$token" "$candidate")"
+    if [ -n "$zid" ]; then
+      echo "$zid"
+      return 0
+    fi
+    if [[ "$candidate" == *.* ]]; then
+      candidate="${candidate#*.}"
+    else
+      break
+    fi
+  done
+  echo ""
+}
+
+cf_patch_setting_raw() {
   local zone_id="$1"; shift
   local setting="$1"; shift
   local value="$1"; shift
   local token="$1"; shift
-  curl -fsS -X PATCH \
+  curl -sS -X PATCH \
     -H "Authorization: Bearer ${token}" \
     -H 'Content-Type: application/json' \
     --data "{\"value\":\"${value}\"}" \
-    "https://api.cloudflare.com/client/v4/zones/${zone_id}/settings/${setting}" | jq -r '.success'
+    "https://api.cloudflare.com/client/v4/zones/${zone_id}/settings/${setting}"
+}
+
+cf_setting_success() {
+  local json="$1"
+  echo "$json" | jq -r '.success // false'
 }
 
 configure_cloudflare_full_strict() {
@@ -332,35 +358,43 @@ configure_cloudflare_full_strict() {
 
   # Determine zone ID
   if [ -z "$CF_ZONE_ID" ]; then
-    if [ -z "$CF_ZONE_NAME" ]; then
-      CF_ZONE_NAME="$(guess_zone_from_domain "$DOMAIN")"
+    if [ -n "$CF_ZONE_NAME" ]; then
+      CF_ZONE_ID="$(get_zone_id_from_name "$CF_API_TOKEN" "$CF_ZONE_NAME" || true)"
     fi
-    log_message "Resolving Cloudflare Zone ID for ${CF_ZONE_NAME}..."
-    CF_ZONE_ID="$(get_zone_id_from_name "$CF_API_TOKEN" "$CF_ZONE_NAME" || true)"
     if [ -z "$CF_ZONE_ID" ]; then
-      log_error "Failed to resolve Cloudflare Zone ID for ${CF_ZONE_NAME}. Ensure token has Zone:Read and the zone exists."
-      return 1
+      log_message "Resolving Cloudflare Zone ID by walking ${DOMAIN} up the tree..."
+      CF_ZONE_ID="$(resolve_zone_id_for_domain "$CF_API_TOKEN" "$DOMAIN" || true)"
+      if [ -z "$CF_ZONE_ID" ]; then
+        log_error "Failed to resolve Cloudflare Zone ID from domain ${DOMAIN}. Set CF_ZONE_NAME or CF_ZONE_ID and try again."
+        return 1
+      fi
     fi
   fi
 
-  log_message "Setting Cloudflare SSL mode to Full (Strict) for zone ${CF_ZONE_ID} (${CF_ZONE_NAME:-unknown})"
-  local ok
-  ok=$(cf_patch_setting "$CF_ZONE_ID" "ssl" "strict" "$CF_API_TOKEN")
+  log_message "Setting Cloudflare SSL mode to Full (Strict) for zone ${CF_ZONE_ID} (${CF_ZONE_NAME:-auto})"
+  local resp ok
+  resp="$(cf_patch_setting_raw "$CF_ZONE_ID" "ssl" "strict" "$CF_API_TOKEN" || true)"
+  ok="$(cf_setting_success "$resp")"
   if [ "$ok" != "true" ]; then
-    log_error "Cloudflare: failed to set SSL mode to strict."
+    log_error "Cloudflare: failed to set SSL mode to strict. Response:"
+    echo "$resp" >&3
     return 1
   fi
 
-  log_message "Enabling Cloudflare 'Always Use HTTPS'..."
-  ok=$(cf_patch_setting "$CF_ZONE_ID" "always_use_https" "on" "$CF_API_TOKEN")
+  log_message "Enabling 'Always Use HTTPS'..."
+  resp="$(cf_patch_setting_raw "$CF_ZONE_ID" "always_use_https" "on" "$CF_API_TOKEN" || true)"
+  ok="$(cf_setting_success "$resp")"
   if [ "$ok" != "true" ]; then
-    log_warning "Cloudflare: could not enable Always Use HTTPS (continuing)."
+    log_warning "Cloudflare: could not enable Always Use HTTPS. Response:"
+    echo "$resp" >&3
   fi
 
-  log_message "Enabling Cloudflare 'Automatic HTTPS Rewrites'..."
-  ok=$(cf_patch_setting "$CF_ZONE_ID" "automatic_https_rewrites" "on" "$CF_API_TOKEN")
+  log_message "Enabling 'Automatic HTTPS Rewrites'..."
+  resp="$(cf_patch_setting_raw "$CF_ZONE_ID" "automatic_https_rewrites" "on" "$CF_API_TOKEN" || true)"
+  ok="$(cf_setting_success "$resp")"
   if [ "$ok" != "true" ]; then
-    log_warning "Cloudflare: could not enable Automatic HTTPS Rewrites (continuing)."
+    log_warning "Cloudflare: could not enable Automatic HTTPS Rewrites. Response:"
+    echo "$resp" >&3
   fi
 
   log_message "Cloudflare SSL set to Full (Strict)."
