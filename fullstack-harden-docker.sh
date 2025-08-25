@@ -228,6 +228,14 @@ collect_configuration() {
       echo "Certbot email is required when TLS is enabled." >&3
     done
     prompt_with_default CERTBOT_STAGING "Use Let's Encrypt staging? (yes/no)" "$CERTBOT_STAGING"
+    # Cloudflare Strict configuration (optional)
+    prompt_with_default CONFIGURE_CLOUDFLARE_STRICT "Switch Cloudflare zone to Full (Strict) SSL after issuing cert? (yes/no)" "$CONFIGURE_CLOUDFLARE_STRICT"
+    if [ "$CONFIGURE_CLOUDFLARE_STRICT" = "yes" ]; then
+      _guess_zone="$(guess_zone_from_domain "$DOMAIN")"
+      prompt_with_default CF_ZONE_NAME "Cloudflare zone name (parent domain)" "${CF_ZONE_NAME:-$_guess_zone}"
+      # Prompt for API token securely; leave blank to keep current value
+      secure_prompt_optional CF_API_TOKEN "Enter Cloudflare API Token (Zone:Read, Zone Settings:Edit)"
+    fi
   fi
   prompt_with_default APP_PORT "Frontend port on localhost (host: ${APP_PORT})" "$APP_PORT"
   prompt_with_default API_PORT "API port on localhost (host: ${API_PORT})" "$API_PORT"
@@ -255,6 +263,12 @@ collect_configuration() {
     echo "  DOMAIN_ALIASES            : ${DOMAIN_ALIASES:-<none>}" >&3
     echo "  CERTBOT_EMAIL             : $CERTBOT_EMAIL" >&3
     echo "  CERTBOT_STAGING           : $CERTBOT_STAGING" >&3
+    echo "  CONFIGURE_CLOUDFLARE_STRICT: $CONFIGURE_CLOUDFLARE_STRICT" >&3
+    if [ "$CONFIGURE_CLOUDFLARE_STRICT" = "yes" ]; then
+      echo "  CF_ZONE_NAME              : ${CF_ZONE_NAME:-<none>}" >&3
+      echo "  CF_ZONE_ID                : ${CF_ZONE_ID:-<auto-resolve>}" >&3
+      echo "  CF_API_TOKEN              : ${CF_API_TOKEN:+*** set ***}" >&3
+    fi
   fi
   echo "  APP_PORT                  : $APP_PORT" >&3
   echo "  API_PORT                  : $API_PORT" >&3
