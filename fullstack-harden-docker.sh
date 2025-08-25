@@ -329,6 +329,29 @@ resolve_zone_id_for_domain() {
   echo ""
 }
 
+cf_patch_setting() {
+  local zone_id="$1"; shift
+  local setting="$1"; shift
+  local value="$1"; shift
+  local token="$1"; shift
+  curl -fsS -X PATCH \
+    -H "Authorization: Bearer ${token}" \
+    -H 'Content-Type: application/json' \
+    --data "{\"value\":\"${value}\"}" \
+    "https://api.cloudflare.com/client/v4/zones/${zone_id}/settings/${setting}" | jq -r '.success'
+}
+
+# Raw GET and PATCH helpers for richer error handling
+cf_get_setting_raw() {
+  local zone_id="$1"; shift
+  local setting="$1"; shift
+  local token="$1"; shift
+  curl -sS -X GET \
+    -H "Authorization: Bearer ${token}" \
+    -H 'Content-Type: application/json' \
+    "https://api.cloudflare.com/client/v4/zones/${zone_id}/settings/${setting}"
+}
+
 cf_patch_setting_raw() {
   local zone_id="$1"; shift
   local setting="$1"; shift
@@ -346,6 +369,16 @@ cf_setting_success() {
   echo "$json" | jq -r '.success // false'
 }
 
+cf_first_error_code() {
+  local json="$1"
+  echo "$json" | jq -r '.errors[0].code // empty'
+}
+
+cf_first_error_message() {
+  local json="$1"
+  echo "$json" | jq -r '.errors[0].message // empty'
+}
+
 configure_cloudflare_full_strict() {
   if [ "$CONFIGURE_CLOUDFLARE_STRICT" != "yes" ]; then
     return 0
@@ -358,42 +391,58 @@ configure_cloudflare_full_strict() {
 
   # Determine zone ID
   if [ -z "$CF_ZONE_ID" ]; then
-    if [ -n "$CF_ZONE_NAME" ]; then
-      CF_ZONE_ID="$(get_zone_id_from_name "$CF_API_TOKEN" "$CF_ZONE_NAME" || true)"
+    if [ -z "$CF_ZONE_NAME" ]; then
+      CF_ZONE_NAME="$(guess_zone_from_domain "$DOMAIN")"
     fi
+    log_message "Resolving Cloudflare Zone ID for ${CF_ZONE_NAME}..."
+    CF_ZONE_ID="$(get_zone_id_from_name "$CF_API_TOKEN" "$CF_ZONE_NAME" || true)"
     if [ -z "$CF_ZONE_ID" ]; then
-      log_message "Resolving Cloudflare Zone ID by walking ${DOMAIN} up the tree..."
-      CF_ZONE_ID="$(resolve_zone_id_for_domain "$CF_API_TOKEN" "$DOMAIN" || true)"
-      if [ -z "$CF_ZONE_ID" ]; then
-        log_error "Failed to resolve Cloudflare Zone ID from domain ${DOMAIN}. Set CF_ZONE_NAME or CF_ZONE_ID and try again."
-        return 1
-      fi
+      log_error "Failed to resolve Cloudflare Zone ID for ${CF_ZONE_NAME}. Ensure token has Zone:Read and the zone exists."
+      return 1
     fi
   fi
 
-  log_message "Setting Cloudflare SSL mode to Full (Strict) for zone ${CF_ZONE_ID} (${CF_ZONE_NAME:-auto})"
-  local resp ok
+  # Preflight: check we can read SSL setting (detect 9109 early)
+  local preflight resp ok code msg
+  preflight="$(cf_get_setting_raw "$CF_ZONE_ID" "ssl" "$CF_API_TOKEN" || true)"
+  ok="$(cf_setting_success "$preflight")"
+  if [ "$ok" != "true" ]; then
+    code="$(cf_first_error_code "$preflight")"
+    msg="$(cf_first_error_message "$preflight")"
+    log_error "Cloudflare preflight failed for zone ${CF_ZONE_ID}. Code: ${code:-?}, Message: ${msg:-?}"
+    echo "$preflight" >&3
+    if [ "$code" = "9109" ]; then
+      log_error "The API token is unauthorized for this zone. Ensure the token has: 'Zone:Read' and 'Zone Settings:Edit' permissions for this zone (or All zones)."
+      log_error "You can set CF_ZONE_NAME to the parent zone (e.g., example.com) or CF_ZONE_ID directly, and use a token scoped to that zone."
+    fi
+    return 1
+  fi
+
+  log_message "Setting Cloudflare SSL mode to Full (Strict) for zone ${CF_ZONE_ID} (${CF_ZONE_NAME:-unknown})"
   resp="$(cf_patch_setting_raw "$CF_ZONE_ID" "ssl" "strict" "$CF_API_TOKEN" || true)"
   ok="$(cf_setting_success "$resp")"
   if [ "$ok" != "true" ]; then
-    log_error "Cloudflare: failed to set SSL mode to strict. Response:"
+    code="$(cf_first_error_code "$resp")"; msg="$(cf_first_error_message "$resp")"
+    log_error "Cloudflare: failed to set SSL mode to strict. Code: ${code:-?}, Message: ${msg:-?}"
     echo "$resp" >&3
     return 1
   fi
 
-  log_message "Enabling 'Always Use HTTPS'..."
+  log_message "Enabling Cloudflare 'Always Use HTTPS'..."
   resp="$(cf_patch_setting_raw "$CF_ZONE_ID" "always_use_https" "on" "$CF_API_TOKEN" || true)"
   ok="$(cf_setting_success "$resp")"
   if [ "$ok" != "true" ]; then
-    log_warning "Cloudflare: could not enable Always Use HTTPS. Response:"
+    code="$(cf_first_error_code "$resp")"; msg="$(cf_first_error_message "$resp")"
+    log_warning "Cloudflare: could not enable Always Use HTTPS. Code: ${code:-?}, Message: ${msg:-?}"
     echo "$resp" >&3
   fi
 
-  log_message "Enabling 'Automatic HTTPS Rewrites'..."
+  log_message "Enabling Cloudflare 'Automatic HTTPS Rewrites'..."
   resp="$(cf_patch_setting_raw "$CF_ZONE_ID" "automatic_https_rewrites" "on" "$CF_API_TOKEN" || true)"
   ok="$(cf_setting_success "$resp")"
   if [ "$ok" != "true" ]; then
-    log_warning "Cloudflare: could not enable Automatic HTTPS Rewrites. Response:"
+    code="$(cf_first_error_code "$resp")"; msg="$(cf_first_error_message "$resp")"
+    log_warning "Cloudflare: could not enable Automatic HTTPS Rewrites. Code: ${code:-?}, Message: ${msg:-?}"
     echo "$resp" >&3
   fi
 
