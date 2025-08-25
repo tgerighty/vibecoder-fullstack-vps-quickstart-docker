@@ -9,11 +9,25 @@ Run through these steps to have a VPS with your domain attached to it and an ins
 - an api (Node + Express)
 - a database (Postgres)
 
-1) Run this setup and harden script in a new clean [Ubuntu 24.04 Hetzner VPS](https://console.hetzner.com/projects) and make sure you set at least one SSH key for the creation of VPS as it will be only way to login after running this line:
+## Choose Your Setup Method
+
+### Option 1: Docker-Based Setup (Recommended) 🐳
+Run services in Docker containers for better isolation, security, and easier management. See [README-DOCKER.md](README-DOCKER.md) for detailed information.
+
+```bash
+curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden-docker.sh | sudo bash && sudo reboot
+```
+
+### Option 2: Traditional Setup (Original)
+Run services directly on the host system with PM2 process management.
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh | sudo bash && sudo reboot
 ```
+
+## Setup Steps
+
+1) Run one of the setup scripts above in a new clean [Ubuntu 24.04 Hetzner VPS](https://console.hetzner.com/projects) and make sure you set at least one SSH key for the creation of VPS as it will be only way to login after running this line.
 
 > To connect with your Hetzner VPS use ssh with key: `ssh root@VPS_IP_ADDRESS -i PATH/TO/SSH_KEY -p 22`
 
