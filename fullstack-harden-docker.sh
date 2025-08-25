@@ -483,8 +483,28 @@ sysctl --system >/dev/null 2>&1 || true
 
 log_message "=== PART 2: DOCKER INSTALLATION ==="
 
-# Install Docker (omitted for brevity in this snippet)
-# ... existing code ...
+# Install Docker Engine + Compose plugin if missing
+if ! command -v docker >/dev/null 2>&1; then
+  log_message "Installing Docker Engine and Docker Compose plugin..."
+  apt-get update -y -q || true
+  apt-get install -y -q ca-certificates curl gnupg lsb-release || apt-get install -y -q ca-certificates curl gnupg || true
+  install -m 0755 -d /etc/apt/keyrings
+  if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || true
+    chmod a+r /etc/apt/keyrings/docker.gpg || true
+  fi
+  . /etc/os-release
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${ID} ${VERSION_CODENAME} stable" > /etc/apt/sources.list.d/docker.list
+  apt-get update -y -q || true
+  # Prefer official packages; fall back to Ubuntu's docker.io if repository not available
+  if ! apt-get install -y -q docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then
+    log_warning "Falling back to Ubuntu docker.io packages"
+    apt-get install -y -q docker.io docker-compose-plugin containerd || true
+  fi
+fi
+
+# Ensure Docker directory exists before writing daemon.json
+mkdir -p /etc/docker
 
 cat > /etc/docker/daemon.json <<'EOCONFIG'
 {
@@ -496,7 +516,8 @@ cat > /etc/docker/daemon.json <<'EOCONFIG'
 }
 EOCONFIG
 
-systemctl restart docker
+# Enable and (re)start Docker
+systemctl enable --now docker || systemctl restart docker
 
 #########################################
 # PART 3: NGINX SETUP (HOST)
@@ -522,6 +543,10 @@ if [ -n "$DOMAIN" ]; then
     SERVER_NAME="$SERVER_NAME $DOMAIN_ALIASES"
   fi
 fi
+
+# Ensure Cloudflare Real IP include file exists to avoid nginx -t failing if disabled
+mkdir -p /etc/nginx/conf.d
+[ -f /etc/nginx/conf.d/cloudflare-real-ip.conf ] || touch /etc/nginx/conf.d/cloudflare-real-ip.conf
 
 # Create Nginx configuration for Docker apps
 cat > /etc/nginx/sites-available/app <<EOCONFIG
@@ -709,7 +734,7 @@ NODE_ENV=production
 
 # Frontend
 APP_PORT=$APP_PORT
-NEXT_PUBLIC_API_URL=http://localhost/api
+NEXT_PUBLIC_API_URL=/api
 EOFILE
 
 # Create Docker Compose file (use prebuilt images, no Dockerfiles)
