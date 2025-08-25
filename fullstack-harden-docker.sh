@@ -902,6 +902,14 @@ if [ "$ENABLE_TLS" = "yes" ]; then
         nginx -t && systemctl reload nginx
         # Configure Cloudflare SSL Strict if requested
         configure_cloudflare_full_strict || true
+        # Print quick certificate info to console for verification
+        if command -v certbot >/dev/null 2>&1; then
+          log_message "Let's Encrypt certificate inventory:"; certbot certificates | sed 's/^/  /' >&3 || true
+        fi
+        if [ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]; then
+          log_message "Origin cert details for ${DOMAIN}:";
+          openssl x509 -in "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" -noout -issuer -subject -dates 2>/dev/null | sed 's/^/  /' >&3 || true
+        fi
       else
         log_error "Certbot failed to obtain certificates. Check DNS records and that ports 80/443 are reachable."
       fi
