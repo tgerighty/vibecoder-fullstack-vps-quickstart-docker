@@ -171,6 +171,25 @@ secure_prompt() {
   eval "$var_name=\"$input\""
 }
 
+secure_prompt_optional() {
+  # $1 var name, $2 prompt text (user can press Enter to keep current value)
+  local var_name="$1"; shift
+  local prompt_text="$1"; shift
+  local current_val="${!var_name-}"
+  echo -ne "$prompt_text (leave blank to keep current): " >&3
+  stty -echo < /dev/tty
+  local input=""
+  IFS= read -r input < /dev/tty || true
+  stty echo < /dev/tty
+  echo >&3
+  if [ -n "$input" ]; then
+    eval "$var_name=\"$input\""
+  else
+    # keep existing value
+    :
+  fi
+}
+
 confirm_yes() {
   # $1 prompt text, default Y
   local prompt_text="$1"; shift

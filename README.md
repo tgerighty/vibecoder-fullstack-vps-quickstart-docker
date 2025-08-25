@@ -12,35 +12,32 @@ Note on output and logs
 - The setup script shows only high-level progress in your terminal and sends all command output to /var/log/vps-setup.log.
 - To watch detailed logs while it runs: sudo tail -f /var/log/vps-setup.log
 
-## Choose Your Setup Method
+## Quick start (Docker-based, recommended)
 
-- Option 1: Docker-Based Setup (Recommended)
-  - Uses official prebuilt images (node:20-alpine, postgres:16-alpine)
-  - Nginx runs on the host and proxies to containers bound to localhost
-  - No custom Dockerfiles generated; code is mounted into containers
-  - Healthchecks do not depend on extra tools in containers
-  - Optional HTTPS via Certbot + Nginx
-  - Cloudflare Real IP support (ENABLE_CLOUDFLARE_REAL_IP=yes) to restore client IPs in Nginx logs, rate limits, and app code
-  - See README-DOCKER.md for details
+- Uses official prebuilt images (node:20-alpine, postgres:16-alpine)
+- Nginx runs on the host and proxies to containers bound to localhost
+- Optional HTTPS via Certbot + Nginx (with HSTS + OCSP stapling)
+- Cloudflare Real IP support (ENABLE_CLOUDFLARE_REAL_IP=yes) to restore client IPs in Nginx logs, rate limits, and app code
 
-  ```bash
-  curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden-docker.sh | sudo bash && sudo reboot
-  ```
+```bash
+curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden-docker.sh | sudo bash && sudo reboot
+```
 
-  To enable HTTPS on first run, pass env vars (replace with your domain/email):
-  ```bash
-  SSH_PORT=22 ENABLE_TLS=yes DOMAIN=example.com DOMAIN_ALIASES="www.example.com" CERTBOT_EMAIL=you@example.com \
-  curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden-docker.sh | sudo bash && sudo reboot
-  ```
+Enable HTTPS and Cloudflare Full (Strict) in one go (replace with your values):
+```bash
+sudo ENABLE_TLS=yes \
+DOMAIN=example.com \
+DOMAIN_ALIASES="www.example.com" \
+CERTBOT_EMAIL=you@example.com \
+CONFIGURE_CLOUDFLARE_STRICT=yes \
+CF_API_TOKEN=your_cloudflare_api_token \
+CF_ZONE_NAME=example.com \
+bash -lc 'curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden-docker.sh | sudo bash'
+```
 
-- Option 2: Traditional Setup (Original)
-  - Runs services on the host with PM2
-  - Simpler to understand, less isolation
-  - Not the recommended path going forward
-
-  ```bash
-  curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh | sudo bash && sudo reboot
-  ```
+Notes:
+- If CERTBOT_STAGING=yes, the script uses Let’s Encrypt staging (untrusted test certs).
+- The script auto-skips any domain without A/AAAA records and proceeds with valid ones.
 
 ## What the Docker setup installs
 
@@ -62,94 +59,60 @@ Note on output and logs
 
 - Reconnect to the VPS after reboot
 - Check services
-  ```bash
-  cd /var/www/app
-  docker compose ps
-  docker compose logs -f
-  ```
+```bash
+cd /var/www/app
+docker compose ps
+docker compose logs -f
+```
 - Visit http://YOUR_SERVER_IP (or https://your-domain once TLS is enabled)
 - API is available at /api (proxied by Nginx)
 
 ## HTTPS requirements and behavior
 
 - Each domain you request a certificate for must have a public DNS A or AAAA record.
-- The script now auto-skips any domain without A/AAAA to avoid failing the entire TLS step. You’ll see a warning and the valid domains will proceed.
-- If you use Cloudflare, proxied records (orange cloud) are okay for HTTP-01, provided the proxy reaches your origin.
+- The script auto-skips any domain without A/AAAA to avoid failing the entire TLS step.
+- If you use Cloudflare, proxied records (orange cloud) are fine for HTTP-01 if traffic reaches your origin.
 
 ## Enabling HTTPS later (optional)
 
-If you didn’t enable TLS at install time, you can run:
+If you didn’t enable TLS at install time, you can re-run the script with TLS enabled:
 
 ```bash
-sudo ENABLE_TLS=yes DOMAIN=example.com DOMAIN_ALIASES="www.example.com" CERTBOT_EMAIL=you@example.com bash -lc '
-  # Reload Nginx config to ensure server_name is set
-  systemctl reload nginx
-  # Run certbot once with Nginx plugin to obtain certs and enable redirect
-  certbot --nginx -d "$DOMAIN" $(for d in $DOMAIN_ALIASES; do printf " -d %s" "$d"; done) \
-    --non-interactive --agree-tos -m "$CERTBOT_EMAIL" --redirect
-'
+sudo ENABLE_TLS=yes DOMAIN=example.com DOMAIN_ALIASES="www.example.com" CERTBOT_EMAIL=you@example.com \
+CONFIGURE_CLOUDFLARE_STRICT=yes CF_API_TOKEN=your_cloudflare_api_token CF_ZONE_NAME=example.com \
+bash fullstack-harden-docker.sh
 ```
-
-Make sure your domain’s A record points to this server before running the certbot command.
 
 ## Managing the app (Docker)
 
 - Edit code under /var/www/app (api/ and frontend/)
 - Restart containers to pick up changes
-  ```bash
-  cd /var/www/app
-  docker compose restart api
-  docker compose restart frontend
-  ```
+```bash
+cd /var/www/app
+docker compose restart api
+docker compose restart frontend
+```
 - Update base images and restart
-  ```bash
-  cd /var/www/app
-  docker compose pull
-  docker compose up -d
-  ```
-
-More details in README-DOCKER.md.
-
-## Optional: Install Claude Code on the server
-
 ```bash
-cd / && curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-hardened-fullstack-webserver/main/CLAUDE.md > CLAUDE.md && \
-npm install -g @anthropic-ai/claude-code && \
-echo "✅ Claude Code installed! Run 'claude' to start AI-assisted coding"
+cd /var/www/app
+docker compose pull
+docker compose up -d
 ```
-
-Run Claude in an unrestricted mode (use wisely):
-```bash
-export IS_SANDBOX=1; claude --dangerously-skip-permissions
-```
-
-## Attach a domain (optional)
-
-1. Buy a domain
-2. Create a Cloudflare account
-3. Point your domain’s nameservers to Cloudflare
-4. Create an A record for @ to your VPS IP
-5. Enable TLS as shown above
 
 ## Troubleshooting
 
 - Containers not healthy
-  ```bash
-  cd /var/www/app
-  docker compose logs -f
-  docker ps
-  ```
-- Database connectivity
-  ```bash
-  docker exec app-postgres pg_isready -U appuser -d appdb
-  docker compose restart postgres
-  ```
+```bash
+cd /var/www/app
+docker compose logs -f
+docker ps
+```
 - TLS issues
-  ```bash
-  sudo nginx -t && sudo systemctl reload nginx
-  sudo certbot renew --dry-run
-  sudo tail -n 200 /var/log/letsencrypt/letsencrypt.log
-  ```
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot renew --dry-run
+sudo tail -n 200 /var/log/letsencrypt/letsencrypt.log
+```
 
 ## License
 
