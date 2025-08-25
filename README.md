@@ -1,37 +1,82 @@
-> ⚠️ this project was vibecoded in a day and I'm now working on the feedbacks from [this post](https://x.com/MarcoWorms/status/1953924284734132356)  
->  **I highly recommend that you invest in security for serious projects and don't just rely on this script**
+> ⚠️ This project was originally vibecoded in a day. It has now been revised so the Docker setup is minimal, sane, and actually works with official images. For serious production use, still invest in proper security reviews and operations.
 
 # Vibecoder Fullstack VPS Quick Start
 
-Run through these steps to have a VPS with your domain attached to it and an instance of claude code ready to create any app that uses:
+Spin up a hardened Ubuntu VPS with Nginx on the host and a fullstack app (Next.js frontend + Express API + Postgres) running in Docker containers.
 
-- a frontend (React + Next + Tailwind)
-- an api (Node + Express)
-- a database (Postgres)
+- Frontend: React + Next.js + Tailwind
+- API: Node + Express
+- Database: PostgreSQL
 
 ## Choose Your Setup Method
 
-### Option 1: Docker-Based Setup (Recommended) 🐳
-Run services in Docker containers for better isolation, security, and easier management. See [README-DOCKER.md](README-DOCKER.md) for detailed information.
+- Option 1: Docker-Based Setup (Recommended)
+  - Uses official prebuilt images (node:20-alpine, postgres:16-alpine)
+  - Nginx runs on the host and proxies to containers bound to localhost
+  - No custom Dockerfiles generated; code is mounted into containers
+  - Healthchecks do not depend on extra tools in containers
+  - See README-DOCKER.md for details
 
-```bash
-curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden-docker.sh | sudo bash && sudo reboot
-```
+  ```bash
+  curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden-docker.sh | sudo bash && sudo reboot
+  ```
 
-### Option 2: Traditional Setup (Original)
-Run services directly on the host system with PM2 process management.
+- Option 2: Traditional Setup (Original)
+  - Runs services on the host with PM2
+  - Simpler to understand, less isolation
+  - Not the recommended path going forward
 
-```bash
-curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh | sudo bash && sudo reboot
-```
+  ```bash
+  curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden.sh | sudo bash && sudo reboot
+  ```
 
-## Setup Steps
+## What the Docker setup installs
 
-1) Run one of the setup scripts above in a new clean [Ubuntu 24.04 Hetzner VPS](https://console.hetzner.com/projects) and make sure you set at least one SSH key for the creation of VPS as it will be only way to login after running this line.
+- Security
+  - SSH hardening (key-only auth, custom port)
+  - Fail2ban
+  - UFW (with optional Cloudflare allowlist)
+  - Kernel hardening tuned to work with Docker networking
+  - Unattended security updates
+- Reverse proxy (host)
+  - Nginx listening on 80 (ready for TLS)
+  - Proxies / to frontend (localhost:3000) and /api to API (localhost:3001)
+- Containers (Docker Compose)
+  - postgres:16-alpine with persistent volume and init SQL
+  - node:20-alpine for API; mounts /var/www/app/api; installs deps then runs server.js
+  - node:20-alpine for frontend; mounts /var/www/app/frontend; installs deps, builds, then starts Next.js
 
-> To connect with your Hetzner VPS use ssh with key: `ssh root@VPS_IP_ADDRESS -i PATH/TO/SSH_KEY -p 22`
+## After running the script
 
-2) Then reconnect to your VPS using the SSH key authorized in Hetzner dashboard, and run this line to install claude code and copy a initial CLAUDE.md and instructions for how to navigate and restart all services in our webserver:
+- Reconnect to the VPS after reboot
+- Check services
+  ```bash
+  cd /var/www/app
+  docker compose ps
+  docker compose logs -f
+  ```
+- Visit http://YOUR_SERVER_IP to see the Next.js frontend
+- API is available at http://YOUR_SERVER_IP/api (proxied by Nginx)
+
+## Managing the app (Docker)
+
+- Edit code under /var/www/app (api/ and frontend/)
+- Restart containers to pick up changes
+  ```bash
+  cd /var/www/app
+  docker compose restart api
+  docker compose restart frontend
+  ```
+- Update base images and restart
+  ```bash
+  cd /var/www/app
+  docker compose pull
+  docker compose up -d
+  ```
+
+More details in README-DOCKER.md.
+
+## Optional: Install Claude Code on the server
 
 ```bash
 cd / && curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-hardened-fullstack-webserver/main/CLAUDE.md > CLAUDE.md && \
@@ -39,23 +84,33 @@ npm install -g @anthropic-ai/claude-code && \
 echo "✅ Claude Code installed! Run 'claude' to start AI-assisted coding"
 ```
 
-3) Then to run claude in completely unhinged vibe code mode use this:
-
+Run Claude in an unrestricted mode (use wisely):
 ```bash
 export IS_SANDBOX=1; claude --dangerously-skip-permissions
 ```
 
-4) Deploying into a domain:
+## Attach a domain (optional)
 
-    1) Buy a domain
-    2) Create a [Cloudflare](https://dash.cloudflare.com/) account
-    3) Set the Cloudflare DNS urls in your domain provider
-    4) Create an A record in Cloudflare that points @ to your Hetzner server IP.
+1. Buy a domain
+2. Create a Cloudflare account
+3. Point your domain’s nameservers to Cloudflare
+4. Create an A record for @ to your VPS IP
+5. Add TLS later by installing certbot and updating Nginx
 
-## 📜 License
+## Troubleshooting
+
+- Containers not healthy
+  ```bash
+  cd /var/www/app
+  docker compose logs -f
+  docker ps
+  ```
+- Database connectivity
+  ```bash
+  docker exec app-postgres pg_isready -U appuser -d appdb
+  docker compose restart postgres
+  ```
+
+## License
 
 MIT License - Use freely for personal or commercial projects.
-
----
-
-**Remember**: This script provides a strong foundation, but ongoing maintenance, updates, and monitoring are essential for production systems. Always follow security best practices and keep your applications updated.
