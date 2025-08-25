@@ -20,6 +20,15 @@ NC='\033[0m' # No Color
 SSH_PORT=${SSH_PORT:-22}
 ADMIN_EMAIL=${ADMIN_EMAIL:-""}
 ENABLE_CLOUDFLARE=${ENABLE_CLOUDFLARE:-"yes"}
+# TLS/HTTPS configuration
+ENABLE_TLS=${ENABLE_TLS:-"no"}
+DOMAIN=${DOMAIN:-""}
+DOMAIN_ALIASES=${DOMAIN_ALIASES:-""} # space-separated list
+CERTBOT_EMAIL=${CERTBOT_EMAIL:-""}
+CERTBOT_STAGING=${CERTBOT_STAGING:-"no"}
+# Cloudflare Real IP support (restore original client IPs in Nginx)
+ENABLE_CLOUDFLARE_REAL_IP=${ENABLE_CLOUDFLARE_REAL_IP:-"yes"}
+
 DB_NAME="appdb"
 DB_USER="appuser"
 # Generate a safe password without problematic characters
@@ -59,7 +68,7 @@ touch "$LOG_FILE"
 chmod 640 "$LOG_FILE"
 
 log_message "Starting VPS setup and hardening with Docker..."
-log_message "Configuration: SSH_PORT=$SSH_PORT, ENABLE_CLOUDFLARE=$ENABLE_CLOUDFLARE"
+log_message "Configuration: SSH_PORT=$SSH_PORT, ENABLE_CLOUDFLARE=$ENABLE_CLOUDFLARE, ENABLE_TLS=$ENABLE_TLS, DOMAIN=${DOMAIN:-unset}, ENABLE_CLOUDFLARE_REAL_IP=${ENABLE_CLOUDFLARE_REAL_IP}"
 
 #########################################
 # PART 1: SYSTEM HARDENING
@@ -351,12 +360,21 @@ apt-get install -y -q nginx
 # Remove default site
 rm -f /etc/nginx/sites-enabled/default
 
+# Compute server_name for Nginx
+SERVER_NAME="_"
+if [ -n "$DOMAIN" ]; then
+  SERVER_NAME="$DOMAIN"
+  if [ -n "$DOMAIN_ALIASES" ]; then
+    SERVER_NAME="$SERVER_NAME $DOMAIN_ALIASES"
+  fi
+fi
+
 # Create Nginx configuration for Docker apps
 cat > /etc/nginx/sites-available/app <<EOCONFIG
 # Rate limiting zones
-limit_req_zone $binary_remote_addr zone=general:10m rate=10r/s;
-limit_req_zone $binary_remote_addr zone=api:10m rate=30r/s;
-limit_conn_zone $binary_remote_addr zone=addr:10m;
+limit_req_zone \$binary_remote_addr zone=general:10m rate=10r/s;
+limit_req_zone \$binary_remote_addr zone=api:10m rate=30r/s;
+limit_conn_zone \$binary_remote_addr zone=addr:10m;
 
 # Upstream for Docker containers
 upstream frontend {
@@ -370,49 +388,49 @@ upstream api {
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
-    server_name _;
-    
+    server_name ${SERVER_NAME};
+
     # Security headers
     add_header X-Frame-Options "SAMEORIGIN" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
     add_header Referrer-Policy "no-referrer-when-downgrade" always;
-    
+
     # Rate limiting
     limit_req zone=general burst=20 nodelay;
     limit_conn addr 10;
-    
+
     # Logging
     access_log /var/log/nginx/app_access.log;
     error_log /var/log/nginx/app_error.log;
-    
+
     # Frontend proxy
     location / {
         proxy_pass http://frontend;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
         proxy_read_timeout 90;
     }
-    
+
     # API proxy with higher rate limit
     location /api {
         limit_req zone=api burst=50 nodelay;
-        
+
         proxy_pass http://api;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_read_timeout 90;
     }
-    
+
     location /health {
         access_log off;
         return 200 "healthy\n";
@@ -422,11 +440,71 @@ server {
 EOCONFIG
 
 # Enable site
-ln -s /etc/nginx/sites-available/app /etc/nginx/sites-enabled/
+ln -s /etc/nginx/sites-available/app /etc/nginx/sites-enabled/ 2>/dev/null || true
 
 # Test and reload Nginx
 nginx -t && systemctl reload nginx
 systemctl enable nginx
+
+# Cloudflare Real IP support (place in http context via conf.d)
+if [ "$ENABLE_CLOUDFLARE_REAL_IP" = "yes" ]; then
+  log_message "Configuring Cloudflare Real IP support for Nginx..."
+  cat > /usr/local/bin/update-cloudflare-real-ip.sh <<'EOS'
+#!/bin/bash
+set -euo pipefail
+TARGET="/etc/nginx/conf.d/cloudflare-real-ip.conf"
+TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
+{
+  echo "# Cloudflare Real IP ranges - auto-generated"
+  echo "# See: https://www.cloudflare.com/ips/"
+  echo "real_ip_header CF-Connecting-IP;"
+  echo "real_ip_recursive on;"
+  curl -fsS https://www.cloudflare.com/ips-v4 | awk '{print "set_real_ip_from "$1";"}'
+  curl -fsS https://www.cloudflare.com/ips-v6 | awk '{print "set_real_ip_from "$1";"}'
+} > "$TMP"
+if [ ! -f "$TARGET" ] || ! diff -q "$TMP" "$TARGET" >/dev/null 2>&1; then
+  install -m 0644 "$TMP" "$TARGET"
+  nginx -t && systemctl reload nginx || true
+fi
+exit 0
+EOS
+  chmod +x /usr/local/bin/update-cloudflare-real-ip.sh
+  /usr/local/bin/update-cloudflare-real-ip.sh || log_warning "Failed to update Cloudflare real IP list"
+  # Refresh daily at 03:15
+  (crontab -l 2>/dev/null; echo "15 3 * * * /usr/local/bin/update-cloudflare-real-ip.sh >/dev/null 2>&1") | crontab -
+else
+  log_info "Cloudflare Real IP support disabled (ENABLE_CLOUDFLARE_REAL_IP=no)."
+fi
+
+# Optional TLS setup using Let's Encrypt Certbot
+if [ "$ENABLE_TLS" = "yes" ]; then
+  if [ -z "$DOMAIN" ] || [ -z "$CERTBOT_EMAIL" ]; then
+    log_error "ENABLE_TLS is 'yes' but DOMAIN or CERTBOT_EMAIL is not set. Skipping TLS setup."
+  else
+    log_message "Installing/Configuring HTTPS for: $DOMAIN ${DOMAIN_ALIASES}"
+    # Ensure certbot and nginx plugin are installed
+    apt-get install -y -q certbot python3-certbot-nginx
+    domains_args=""
+    for d in $DOMAIN $DOMAIN_ALIASES; do
+      domains_args="$domains_args -d $d"
+    done
+    staging_flag=""
+    if [ "$CERTBOT_STAGING" = "yes" ]; then
+      staging_flag="--staging"
+      log_warning "Using Let's Encrypt staging environment (no trusted certs)."
+    fi
+    # Obtain/renew certs and update Nginx with HTTPS + redirect
+    if certbot --nginx ${domains_args} --non-interactive --agree-tos -m "$CERTBOT_EMAIL" --redirect ${staging_flag}; then
+      log_message "TLS certificates obtained and Nginx configured for HTTPS."
+      nginx -t && systemctl reload nginx
+    else
+      log_error "Certbot failed to obtain certificates. Check DNS records and that ports 80/443 are reachable."
+    fi
+  fi
+else
+  log_info "TLS is disabled (ENABLE_TLS=no). Skipping Certbot/HTTPS setup."
+fi
 
 #########################################
 # PART 4: APPLICATION SETUP WITH DOCKER
@@ -595,7 +673,6 @@ cat > $APP_DIR/api/package.json <<'EOFILE'
   }
 }
 EOFILE
-
 # Create API server
 cat > $APP_DIR/api/server.js <<'EOFILE'
 const express = require('express');
@@ -607,6 +684,9 @@ require('dotenv').config();
 
 const app = express();
 const port = process.env.API_PORT || 3001;
+
+// Trust Nginx proxy (loopback) so req.ip reflects the real client IP
+app.set('trust proxy', 'loopback');
 
 // Middleware
 app.use(helmet());
@@ -653,11 +733,11 @@ app.get('/api/posts/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query('SELECT * FROM posts WHERE id = $1', [id]);
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Post not found' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error fetching post:', err);
@@ -668,16 +748,16 @@ app.get('/api/posts/:id', async (req, res) => {
 app.post('/api/posts', async (req, res) => {
   try {
     const { title, content } = req.body;
-    
+
     if (!title) {
       return res.status(400).json({ error: 'Title is required' });
     }
-    
+
     const result = await pool.query(
       'INSERT INTO posts (title, content) VALUES ($1, $2) RETURNING *',
       [title, content]
     );
-    
+
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Error creating post:', err);
@@ -689,16 +769,16 @@ app.put('/api/posts/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { title, content } = req.body;
-    
+
     const result = await pool.query(
       'UPDATE posts SET title = $1, content = $2 WHERE id = $3 RETURNING *',
       [title, content, id]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Post not found' });
     }
-    
+
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error updating post:', err);
@@ -709,16 +789,16 @@ app.put('/api/posts/:id', async (req, res) => {
 app.delete('/api/posts/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const result = await pool.query(
       'DELETE FROM posts WHERE id = $1 RETURNING id',
       [id]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Post not found' });
     }
-    
+
     res.json({ message: 'Post deleted successfully', id: result.rows[0].id });
   } catch (err) {
     console.error('Error deleting post:', err);
@@ -730,16 +810,16 @@ app.delete('/api/posts/:id', async (req, res) => {
 app.get('/api/health', async (req, res) => {
   try {
     await pool.query('SELECT 1');
-    res.json({ 
-      status: 'healthy', 
+    res.json({
+      status: 'healthy',
       uptime: process.uptime(),
       database: 'connected'
     });
   } catch (err) {
-    res.status(503).json({ 
-      status: 'unhealthy', 
+    res.status(503).json({
+      status: 'unhealthy',
       database: 'disconnected',
-      error: err.message 
+      error: err.message
     });
   }
 });
@@ -1099,6 +1179,20 @@ chmod +x /usr/local/bin/docker-health-check.sh
 # FINAL SUMMARY
 #########################################
 
+# Add TLS summary if enabled
+if [ "${ENABLE_TLS:-no}" = "yes" ] && [ -n "${DOMAIN}" ] && [ -n "${CERTBOT_EMAIL}" ]; then
+  TLS_SUMMARY="- HTTPS enabled for domain(s): ${DOMAIN} ${DOMAIN_ALIASES}"
+else
+  TLS_SUMMARY="- HTTPS not enabled (set ENABLE_TLS=yes and provide DOMAIN and CERTBOT_EMAIL to enable)"
+fi
+
+# Cloudflare Real IP summary
+if [ "${ENABLE_CLOUDFLARE_REAL_IP:-no}" = "yes" ]; then
+  CF_REAL_IP_SUMMARY="- Cloudflare Real IP support enabled (auto-refreshed daily)"
+else
+  CF_REAL_IP_SUMMARY="- Cloudflare Real IP support disabled"
+fi
+
 log_message "=== SETUP COMPLETE ==="
 log_info "Your Dockerized VPS has been successfully configured!"
 log_info ""
@@ -1108,6 +1202,8 @@ log_info "- Fail2ban configured"
 log_info "- UFW firewall enabled"
 log_info "- Automatic security updates"
 log_info "- Docker security best practices"
+log_info "$TLS_SUMMARY"
+log_info "$CF_REAL_IP_SUMMARY"
 log_info ""
 log_info "Application Stack:"
 log_info "- Nginx (reverse proxy) on host"

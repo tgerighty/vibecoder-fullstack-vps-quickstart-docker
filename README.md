@@ -15,9 +15,17 @@ Spin up a hardened Ubuntu VPS with Nginx on the host and a fullstack app (Next.j
   - Nginx runs on the host and proxies to containers bound to localhost
   - No custom Dockerfiles generated; code is mounted into containers
   - Healthchecks do not depend on extra tools in containers
+  - Optional HTTPS via Certbot + Nginx
+  - Cloudflare Real IP support (ENABLE_CLOUDFLARE_REAL_IP=yes) to restore client IPs in Nginx logs, rate limits, and app code
   - See README-DOCKER.md for details
 
   ```bash
+  curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden-docker.sh | sudo bash && sudo reboot
+  ```
+
+  To enable HTTPS on first run, pass env vars (replace with your domain/email):
+  ```bash
+  SSH_PORT=22 ENABLE_TLS=yes DOMAIN=example.com DOMAIN_ALIASES="www.example.com" CERTBOT_EMAIL=you@example.com \
   curl -sSL https://raw.githubusercontent.com/MarcoWorms/ubuntu-vps-harden/main/fullstack-harden-docker.sh | sudo bash && sudo reboot
   ```
 
@@ -39,7 +47,7 @@ Spin up a hardened Ubuntu VPS with Nginx on the host and a fullstack app (Next.j
   - Kernel hardening tuned to work with Docker networking
   - Unattended security updates
 - Reverse proxy (host)
-  - Nginx listening on 80 (ready for TLS)
+  - Nginx listening on 80 (with optional auto-HTTPS via Certbot)
   - Proxies / to frontend (localhost:3000) and /api to API (localhost:3001)
 - Containers (Docker Compose)
   - postgres:16-alpine with persistent volume and init SQL
@@ -55,8 +63,24 @@ Spin up a hardened Ubuntu VPS with Nginx on the host and a fullstack app (Next.j
   docker compose ps
   docker compose logs -f
   ```
-- Visit http://YOUR_SERVER_IP to see the Next.js frontend
-- API is available at http://YOUR_SERVER_IP/api (proxied by Nginx)
+- Visit http://YOUR_SERVER_IP (or https://your-domain once TLS is enabled)
+- API is available at /api (proxied by Nginx)
+
+## Enabling HTTPS later (optional)
+
+If you didn’t enable TLS at install time, you can run:
+
+```bash
+sudo ENABLE_TLS=yes DOMAIN=example.com DOMAIN_ALIASES="www.example.com" CERTBOT_EMAIL=you@example.com bash -lc '
+  # Reload Nginx config to ensure server_name is set
+  systemctl reload nginx
+  # Run certbot once with Nginx plugin to obtain certs and enable redirect
+  certbot --nginx -d "$DOMAIN" $(for d in $DOMAIN_ALIASES; do printf " -d %s" "$d"; done) \
+    --non-interactive --agree-tos -m "$CERTBOT_EMAIL" --redirect
+'
+```
+
+Make sure your domain’s A record points to this server before running the certbot command.
 
 ## Managing the app (Docker)
 
@@ -95,7 +119,7 @@ export IS_SANDBOX=1; claude --dangerously-skip-permissions
 2. Create a Cloudflare account
 3. Point your domain’s nameservers to Cloudflare
 4. Create an A record for @ to your VPS IP
-5. Add TLS later by installing certbot and updating Nginx
+5. Enable TLS as shown above
 
 ## Troubleshooting
 
@@ -109,6 +133,12 @@ export IS_SANDBOX=1; claude --dangerously-skip-permissions
   ```bash
   docker exec app-postgres pg_isready -U appuser -d appdb
   docker compose restart postgres
+  ```
+- TLS issues
+  ```bash
+  sudo nginx -t && sudo systemctl reload nginx
+  sudo certbot renew --dry-run
+  sudo tail -n 200 /var/log/letsencrypt/letsencrypt.log
   ```
 
 ## License
