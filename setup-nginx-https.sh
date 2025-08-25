@@ -85,7 +85,7 @@ gather_inputs() {
   read -rp "Proceed with these settings? [Y/n]: " confirm
   confirm=${confirm:-Y}
   case "$confirm" in
-    y|Y|yes|YES) ;; 
+    y|Y|yes|YES) ;;
     *) err "Aborted by user"; exit 1;;
   esac
 }
@@ -294,10 +294,10 @@ install_cert() {
 
 main() {
   require_root
-  gather_inputs
   ensure_tools
   ensure_nginx_installed
   ensure_sites_enabled_included
+  gather_inputs
   write_app_site
   ensure_cloudflare_include_file
   reload_nginx
