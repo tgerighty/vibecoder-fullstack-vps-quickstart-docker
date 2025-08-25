@@ -26,6 +26,11 @@ DOMAIN=${DOMAIN:-""}
 DOMAIN_ALIASES=${DOMAIN_ALIASES:-""} # space-separated list
 CERTBOT_EMAIL=${CERTBOT_EMAIL:-""}
 CERTBOT_STAGING=${CERTBOT_STAGING:-"no"}
+# Cloudflare Zone config (optional): switch to Full (Strict) via API
+CONFIGURE_CLOUDFLARE_STRICT=${CONFIGURE_CLOUDFLARE_STRICT:-"no"}
+CF_API_TOKEN=${CF_API_TOKEN:-""}
+CF_ZONE_ID=${CF_ZONE_ID:-""}
+CF_ZONE_NAME=${CF_ZONE_NAME:-""}
 # Cloudflare Real IP support (restore original client IPs in Nginx)
 ENABLE_CLOUDFLARE_REAL_IP=${ENABLE_CLOUDFLARE_REAL_IP:-"yes"}
 
@@ -246,6 +251,86 @@ collect_configuration() {
 domain_has_dns() {
   local d="$1"
   getent ahosts "$d" | awk '{print $1}' | grep -Eq '^[0-9]'
+}
+
+# --- Cloudflare helpers (optional) ---
+ensure_jq_installed() {
+  if ! command -v jq >/dev/null 2>&1; then
+    log_info "Installing jq for Cloudflare API calls..."
+    apt-get update -qq
+    apt-get install -y -q jq
+  fi
+}
+
+guess_zone_from_domain() {
+  local d="$1"
+  # naive guess: last two labels (works for most common zones)
+  echo "$d" | awk -F. '{n=NF; if (n>=2) print $(n-1)"."$n; else print $0}'
+}
+
+get_zone_id_from_name() {
+  local token="$1"; shift
+  local zone_name="$1"; shift
+  curl -fsS -H "Authorization: Bearer ${token}" -H 'Content-Type: application/json' \
+    "https://api.cloudflare.com/client/v4/zones?name=${zone_name}" | jq -r '.result[0].id // empty'
+}
+
+cf_patch_setting() {
+  local zone_id="$1"; shift
+  local setting="$1"; shift
+  local value="$1"; shift
+  local token="$1"; shift
+  curl -fsS -X PATCH \
+    -H "Authorization: Bearer ${token}" \
+    -H 'Content-Type: application/json' \
+    --data "{\"value\":\"${value}\"}" \
+    "https://api.cloudflare.com/client/v4/zones/${zone_id}/settings/${setting}" | jq -r '.success'
+}
+
+configure_cloudflare_full_strict() {
+  if [ "$CONFIGURE_CLOUDFLARE_STRICT" != "yes" ]; then
+    return 0
+  fi
+  if [ -z "$CF_API_TOKEN" ]; then
+    log_warning "CONFIGURE_CLOUDFLARE_STRICT=yes but CF_API_TOKEN is empty. Skipping Cloudflare configuration."
+    return 0
+  fi
+  ensure_jq_installed
+
+  # Determine zone ID
+  if [ -z "$CF_ZONE_ID" ]; then
+    if [ -z "$CF_ZONE_NAME" ]; then
+      CF_ZONE_NAME="$(guess_zone_from_domain "$DOMAIN")"
+    fi
+    log_message "Resolving Cloudflare Zone ID for ${CF_ZONE_NAME}..."
+    CF_ZONE_ID="$(get_zone_id_from_name "$CF_API_TOKEN" "$CF_ZONE_NAME" || true)"
+    if [ -z "$CF_ZONE_ID" ]; then
+      log_error "Failed to resolve Cloudflare Zone ID for ${CF_ZONE_NAME}. Ensure token has Zone:Read and the zone exists."
+      return 1
+    fi
+  fi
+
+  log_message "Setting Cloudflare SSL mode to Full (Strict) for zone ${CF_ZONE_ID} (${CF_ZONE_NAME:-unknown})"
+  local ok
+  ok=$(cf_patch_setting "$CF_ZONE_ID" "ssl" "strict" "$CF_API_TOKEN")
+  if [ "$ok" != "true" ]; then
+    log_error "Cloudflare: failed to set SSL mode to strict."
+    return 1
+  fi
+
+  log_message "Enabling Cloudflare 'Always Use HTTPS'..."
+  ok=$(cf_patch_setting "$CF_ZONE_ID" "always_use_https" "on" "$CF_API_TOKEN")
+  if [ "$ok" != "true" ]; then
+    log_warning "Cloudflare: could not enable Always Use HTTPS (continuing)."
+  fi
+
+  log_message "Enabling Cloudflare 'Automatic HTTPS Rewrites'..."
+  ok=$(cf_patch_setting "$CF_ZONE_ID" "automatic_https_rewrites" "on" "$CF_API_TOKEN")
+  if [ "$ok" != "true" ]; then
+    log_warning "Cloudflare: could not enable Automatic HTTPS Rewrites (continuing)."
+  fi
+
+  log_message "Cloudflare SSL set to Full (Strict)."
 }
 
 # Check if running as root
@@ -699,6 +784,8 @@ if [ "$ENABLE_TLS" = "yes" ]; then
         # Apply HSTS + OCSP stapling on the TLS server block
         harden_tls_server_block
         nginx -t && systemctl reload nginx
+        # Configure Cloudflare SSL Strict if requested
+        configure_cloudflare_full_strict || true
       else
         log_error "Certbot failed to obtain certificates. Check DNS records and that ports 80/443 are reachable."
       fi
