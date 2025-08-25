@@ -118,9 +118,16 @@ ensure_sites_enabled_included() {
   fi
 }
 
+# Ensure the Cloudflare include target exists even when Real IP sync is disabled
+ensure_cloudflare_include_file() {
+  mkdir -p /etc/nginx/conf.d
+  [ -f /etc/nginx/conf.d/cloudflare-real-ip.conf ] || touch /etc/nginx/conf.d/cloudflare-real-ip.conf
+}
+
 setup_cloudflare_real_ip() {
   if [ "$ENABLE_CLOUDFLARE_REAL_IP" != "yes" ]; then
     warn "Cloudflare Real IP support disabled (ENABLE_CLOUDFLARE_REAL_IP=$ENABLE_CLOUDFLARE_REAL_IP)"
+    ensure_cloudflare_include_file
     return 0
   fi
   log "Configuring Cloudflare Real IP support..."
@@ -155,6 +162,47 @@ EOS
   fi
 }
 
+# Add HSTS + OCSP stapling into TLS server block (borrowed from main setup script)
+harden_tls_server_block() {
+  local conf="/etc/nginx/sites-available/app"
+  if [ ! -f "$conf" ]; then
+    warn "Nginx site $conf not found; skipping TLS hardening"
+    return 0
+  fi
+  if ! grep -qE "listen[[:space:]]+443" "$conf"; then
+    warn "No TLS (443) server block found in $conf; skipping TLS hardening"
+    return 0
+  fi
+  cp "$conf" "$conf.bak.$(date +%F-%H%M)"
+
+  # Choose anchor: prefer ssl_certificate_key; fallback to options-ssl include
+  local anchor_regex='ssl_certificate_key'
+  if ! grep -q "$anchor_regex" "$conf"; then
+    anchor_regex='include[[:space:]]+/etc/letsencrypt/options-ssl-nginx\.conf;'
+  fi
+
+  # Add HSTS if missing
+  if ! grep -q "Strict-Transport-Security" "$conf"; then
+    sed -i -E "/$anchor_regex/a\\    add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains; preload\" always;" "$conf" || true
+  fi
+
+  # Add OCSP stapling/resolver if missing
+  if ! grep -q "ssl_stapling on;" "$conf"; then
+    sed -i -E "/$anchor_regex/a\\    resolver_timeout 5s;" "$conf" || true
+    sed -i -E "/$anchor_regex/a\\    resolver 1.1.1.1 1.0.0.1 valid=300s;" "$conf" || true
+    sed -i -E "/$anchor_regex/a\\    ssl_stapling_verify on;" "$conf" || true
+    sed -i -E "/$anchor_regex/a\\    ssl_stapling on;" "$conf" || true
+  fi
+
+  if nginx -t; then
+    systemctl reload nginx
+  else
+    warn "TLS hardening changes caused nginx -t to fail; restoring backup"
+    mv -f "$conf.bak.$(date +%F-%H%M)" "$conf" || true
+    nginx -t && systemctl reload nginx || true
+  fi
+}
+
 write_app_site() {
   local server_name="$DOMAIN"
   if [ -n "$DOMAIN_ALIASES" ]; then
@@ -181,13 +229,13 @@ server {
   location / {
     proxy_pass http://frontend;
     proxy_http_version 1.1;
-    proxy_set_header Upgrade \$http_upgrade;
+    proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
-    proxy_set_header Host \$host;
-    proxy_set_header X-Real-IP \$remote_addr;
-    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
-    proxy_cache_bypass \$http_upgrade;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_cache_bypass $http_upgrade;
     proxy_read_timeout 90;
   }
 
@@ -195,10 +243,10 @@ server {
   location /api {
     proxy_pass http://api;
     proxy_http_version 1.1;
-    proxy_set_header Host \$host;
-    proxy_set_header X-Real-IP \$remote_addr;
-    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_read_timeout 90;
   }
 
@@ -250,13 +298,13 @@ main() {
   ensure_tools
   ensure_nginx_installed
   ensure_sites_enabled_included
-  setup_cloudflare_real_ip
   write_app_site
+  ensure_cloudflare_include_file
   reload_nginx
   install_cert
+  # Final reload after certificate adjustments
   reload_nginx
-  log "Done. Test with: curl -I http://${DOMAIN} and curl -I https://${DOMAIN}"
-  log "If using Cloudflare, set SSL/TLS mode to Full (strict)."
+  log "Done. Your origin should now serve HTTPS."
 }
 
 main "$@"
