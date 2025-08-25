@@ -8,6 +8,10 @@ Spin up a hardened Ubuntu VPS with Nginx on the host and a fullstack app (Next.j
 - API: Node + Express
 - Database: PostgreSQL
 
+Note on output and logs
+- The setup script shows only high-level progress in your terminal and sends all command output to /var/log/vps-setup.log.
+- To watch detailed logs while it runs: sudo tail -f /var/log/vps-setup.log
+
 ## Choose Your Setup Method
 
 - Option 1: Docker-Based Setup (Recommended)
@@ -48,7 +52,7 @@ Spin up a hardened Ubuntu VPS with Nginx on the host and a fullstack app (Next.j
   - Unattended security updates
 - Reverse proxy (host)
   - Nginx listening on 80 (with optional auto-HTTPS via Certbot)
-  - Proxies / to frontend (localhost:3000) and /api to API (localhost:3001)
+  - Proxies / to frontend (localhost:3000 by default) and /api to API (localhost:3001 by default)
 - Containers (Docker Compose)
   - postgres:16-alpine with persistent volume and init SQL
   - node:20-alpine for API; mounts /var/www/app/api; installs deps then runs server.js
@@ -65,6 +69,12 @@ Spin up a hardened Ubuntu VPS with Nginx on the host and a fullstack app (Next.j
   ```
 - Visit http://YOUR_SERVER_IP (or https://your-domain once TLS is enabled)
 - API is available at /api (proxied by Nginx)
+
+## HTTPS requirements and behavior
+
+- Each domain you request a certificate for must have a public DNS A or AAAA record.
+- The script now auto-skips any domain without A/AAAA to avoid failing the entire TLS step. You’ll see a warning and the valid domains will proceed.
+- If you use Cloudflare, proxied records (orange cloud) are okay for HTTP-01, provided the proxy reaches your origin.
 
 ## Enabling HTTPS later (optional)
 
