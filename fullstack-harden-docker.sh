@@ -33,8 +33,8 @@ DB_NAME="appdb"
 DB_USER="appuser"
 # Generate a safe password without problematic characters
 DB_PASS=$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 20)
-APP_PORT=3000
-API_PORT=3001
+APP_PORT=${APP_PORT:-3000}
+API_PORT=${API_PORT:-3001}
 
 # Paths
 APP_DIR="/var/www/app"
@@ -57,6 +57,168 @@ log_info() {
     echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')] INFO:${NC} $1" | tee -a "$LOG_FILE"
 }
 
+# Ensure nginx.conf includes sites-enabled (so our vhosts load)
+ensure_sites_enabled_included() {
+  if ! grep -qE "include\s+/etc/nginx/sites-enabled/\*;" /etc/nginx/nginx.conf; then
+    log_warning "Adding include /etc/nginx/sites-enabled/*; to nginx.conf http block"
+    cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak.$(date +%F-%H%M)
+    sed -i '/http\s*{/a\    include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf
+  fi
+}
+
+# After Certbot configures HTTPS, add HSTS + OCSP stapling to the TLS server block
+harden_tls_server_block() {
+  local conf="/etc/nginx/sites-available/app"
+  if [ ! -f "$conf" ]; then
+    log_warning "Nginx site $conf not found; skipping TLS hardening"
+    return 0
+  fi
+  if ! grep -qE "listen[[:space:]]+443" "$conf"; then
+    log_warning "No TLS (443) server block found in $conf; skipping TLS hardening"
+    return 0
+  fi
+  cp "$conf" "$conf.bak.$(date +%F-%H%M)"
+
+  # Choose anchor: prefer ssl_certificate_key; fallback to options-ssl include
+  local anchor_regex='ssl_certificate_key'
+  if ! grep -q "$anchor_regex" "$conf"; then
+    anchor_regex='include[[:space:]]+/etc/letsencrypt/options-ssl-nginx\.conf;'
+  fi
+
+  # Add HSTS if missing
+  if ! grep -q "Strict-Transport-Security" "$conf"; then
+    sed -i -E "/$anchor_regex/a\\    add_header Strict-Transport-Security \"max-age=31536000; includeSubDomains; preload\" always;" "$conf" || true
+  fi
+
+  # Add OCSP stapling/resolver if missing
+  if ! grep -q "ssl_stapling on;" "$conf"; then
+    sed -i -E "/$anchor_regex/a\\    resolver_timeout 5s;" "$conf" || true
+    sed -i -E "/$anchor_regex/a\\    resolver 1.1.1.1 1.0.0.1 valid=300s;" "$conf" || true
+    sed -i -E "/$anchor_regex/a\\    ssl_stapling_verify on;" "$conf" || true
+    sed -i -E "/$anchor_regex/a\\    ssl_stapling on;" "$conf" || true
+  fi
+
+  if nginx -t; then
+    systemctl reload nginx
+  else
+    log_warning "TLS hardening changes caused nginx -t to fail; restoring backup"
+    mv -f "$conf.bak.$(date +%F-%H%M)" "$conf" || true
+    nginx -t && systemctl reload nginx || true
+  fi
+}
+
+# Interactive prompting helpers
+PROMPT_ALL=${PROMPT_ALL:-yes}
+
+is_interactive() {
+  [ -t 0 ]
+}
+
+prompt_with_default() {
+  # $1 var name, $2 prompt text, $3 default value (may be empty string)
+  local var_name="$1"; shift
+  local prompt_text="$1"; shift
+  local default_val="${1:-}"
+  local current_val="${!var_name-}"
+  local shown_default
+  if [ -n "$current_val" ]; then
+    shown_default="$current_val"
+  else
+    shown_default="$default_val"
+  fi
+  if [ -n "$shown_default" ]; then
+    read -rp "$prompt_text [$shown_default]: " input
+    input="${input:-$shown_default}"
+  else
+    read -rp "$prompt_text: " input
+  fi
+  # Trim whitespace
+  input="$(echo "$input" | xargs)"
+  eval "$var_name=\"$input\""
+}
+
+secure_prompt() {
+  # $1 var name, $2 prompt text
+  local var_name="$1"; shift
+  local prompt_text="$1"; shift
+  read -rsp "$prompt_text: " input
+  echo
+  eval "$var_name=\"$input\""
+}
+
+confirm_yes() {
+  # $1 prompt text, default Y
+  local prompt_text="$1"; shift
+  read -rp "$prompt_text [Y/n]: " ans
+  ans=${ans:-Y}
+  case "$ans" in
+    y|Y|yes|YES) return 0;;
+    *) return 1;;
+  esac
+}
+
+collect_configuration() {
+  if ! is_interactive || [ "$PROMPT_ALL" != "yes" ]; then
+    return 0
+  fi
+  echo
+  echo "=== Interactive configuration ==="
+  prompt_with_default SSH_PORT "SSH port" "$SSH_PORT"
+  prompt_with_default ADMIN_EMAIL "Admin email (for notifications)" "$ADMIN_EMAIL"
+  prompt_with_default ENABLE_CLOUDFLARE "Enable Cloudflare UFW IP rules? (yes/no)" "$ENABLE_CLOUDFLARE"
+  prompt_with_default ENABLE_CLOUDFLARE_REAL_IP "Enable Cloudflare Real IP in Nginx? (yes/no)" "$ENABLE_CLOUDFLARE_REAL_IP"
+  prompt_with_default ENABLE_TLS "Enable TLS/HTTPS with Let's Encrypt? (yes/no)" "$ENABLE_TLS"
+  if [ "$ENABLE_TLS" = "yes" ]; then
+    # DOMAIN and CERTBOT_EMAIL required if TLS enabled
+    while :; do
+      prompt_with_default DOMAIN "Primary domain (e.g., example.com)" "$DOMAIN"
+      [ -n "$DOMAIN" ] && break
+      echo "Domain is required when TLS is enabled."
+    done
+    prompt_with_default DOMAIN_ALIASES "Domain aliases (space-separated, can be blank)" "$DOMAIN_ALIASES"
+    while :; do
+      prompt_with_default CERTBOT_EMAIL "Email for Let's Encrypt registration" "$CERTBOT_EMAIL"
+      [ -n "$CERTBOT_EMAIL" ] && break
+      echo "Certbot email is required when TLS is enabled."
+    done
+    prompt_with_default CERTBOT_STAGING "Use Let's Encrypt staging? (yes/no)" "$CERTBOT_STAGING"
+  fi
+  prompt_with_default APP_PORT "Frontend port on localhost (host: ${APP_PORT})" "$APP_PORT"
+  prompt_with_default API_PORT "API port on localhost (host: ${API_PORT})" "$API_PORT"
+  prompt_with_default DB_NAME "Database name" "$DB_NAME"
+  prompt_with_default DB_USER "Database user" "$DB_USER"
+  if confirm_yes "Auto-generate a random database password?"; then
+    : # keep generated DB_PASS
+  else
+    while :; do
+      secure_prompt DB_PASS "Enter database password"
+      [ -n "$DB_PASS" ] && break
+      echo "Database password cannot be empty."
+    done
+  fi
+
+  echo
+  echo "Selected configuration:"
+  echo "  SSH_PORT                  : $SSH_PORT"
+  echo "  ADMIN_EMAIL               : ${ADMIN_EMAIL:-<none>}"
+  echo "  ENABLE_CLOUDFLARE         : $ENABLE_CLOUDFLARE"
+  echo "  ENABLE_CLOUDFLARE_REAL_IP : $ENABLE_CLOUDFLARE_REAL_IP"
+  echo "  ENABLE_TLS                : $ENABLE_TLS"
+  if [ "$ENABLE_TLS" = "yes" ]; then
+    echo "  DOMAIN                    : $DOMAIN"
+    echo "  DOMAIN_ALIASES            : ${DOMAIN_ALIASES:-<none>}"
+    echo "  CERTBOT_EMAIL             : $CERTBOT_EMAIL"
+    echo "  CERTBOT_STAGING           : $CERTBOT_STAGING"
+  fi
+  echo "  APP_PORT                  : $APP_PORT"
+  echo "  API_PORT                  : $API_PORT"
+  echo "  DB_NAME                   : $DB_NAME"
+  echo "  DB_USER                   : $DB_USER"
+  echo "  DB_PASS                   : ********"
+  echo
+  confirm_yes "Proceed with these settings?" || { echo "Aborted by user."; exit 1; }
+}
+
 # Check if running as root
 if [[ $EUID -ne 0 ]]; then
    log_error "This script must be run as root"
@@ -66,6 +228,9 @@ fi
 # Create log file
 touch "$LOG_FILE"
 chmod 640 "$LOG_FILE"
+
+# Collect interactive configuration if running in a TTY and PROMPT_ALL=yes
+collect_configuration
 
 log_message "Starting VPS setup and hardening with Docker..."
 log_message "Configuration: SSH_PORT=$SSH_PORT, ENABLE_CLOUDFLARE=$ENABLE_CLOUDFLARE, ENABLE_TLS=$ENABLE_TLS, DOMAIN=${DOMAIN:-unset}, ENABLE_CLOUDFLARE_REAL_IP=${ENABLE_CLOUDFLARE_REAL_IP}"
@@ -357,6 +522,9 @@ log_message "=== PART 3: NGINX SETUP ==="
 log_message "Installing Nginx..."
 apt-get install -y -q nginx
 
+# Ensure nginx loads sites-enabled vhosts
+ensure_sites_enabled_included
+
 # Remove default site
 rm -f /etc/nginx/sites-enabled/default
 
@@ -378,17 +546,20 @@ limit_conn_zone \$binary_remote_addr zone=addr:10m;
 
 # Upstream for Docker containers
 upstream frontend {
-    server 127.0.0.1:3000;
+    server 127.0.0.1:${APP_PORT};
 }
 
 upstream api {
-    server 127.0.0.1:3001;
+    server 127.0.0.1:${API_PORT};
 }
 
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name ${SERVER_NAME};
+
+    # If present, apply Cloudflare Real IP config
+    include /etc/nginx/conf.d/cloudflare-real-ip.conf;
 
     # Security headers
     add_header X-Frame-Options "SAMEORIGIN" always;
@@ -471,8 +642,13 @@ exit 0
 EOS
   chmod +x /usr/local/bin/update-cloudflare-real-ip.sh
   /usr/local/bin/update-cloudflare-real-ip.sh || log_warning "Failed to update Cloudflare real IP list"
-  # Refresh daily at 03:15
-  (crontab -l 2>/dev/null; echo "15 3 * * * /usr/local/bin/update-cloudflare-real-ip.sh >/dev/null 2>&1") | crontab -
+  # Refresh daily at 03:15, avoid duplicate cron lines
+  tmp_cron="$(mktemp)"; crontab -l 2>/dev/null > "$tmp_cron" || true
+  if ! grep -q "/usr/local/bin/update-cloudflare-real-ip.sh" "$tmp_cron"; then
+    echo "15 3 * * * /usr/local/bin/update-cloudflare-real-ip.sh >/dev/null 2>&1" >> "$tmp_cron"
+    crontab "$tmp_cron"
+  fi
+  rm -f "$tmp_cron"
 else
   log_info "Cloudflare Real IP support disabled (ENABLE_CLOUDFLARE_REAL_IP=no)."
 fi
@@ -497,6 +673,8 @@ if [ "$ENABLE_TLS" = "yes" ]; then
     # Obtain/renew certs and update Nginx with HTTPS + redirect
     if certbot --nginx ${domains_args} --non-interactive --agree-tos -m "$CERTBOT_EMAIL" --redirect ${staging_flag}; then
       log_message "TLS certificates obtained and Nginx configured for HTTPS."
+      # Apply HSTS + OCSP stapling on the TLS server block
+      harden_tls_server_block
       nginx -t && systemctl reload nginx
     else
       log_error "Certbot failed to obtain certificates. Check DNS records and that ports 80/443 are reachable."
@@ -531,6 +709,7 @@ API_PORT=$API_PORT
 NODE_ENV=production
 
 # Frontend
+APP_PORT=$APP_PORT
 NEXT_PUBLIC_API_URL=http://localhost/api
 EOFILE
 
@@ -569,14 +748,14 @@ services:
       DB_PASS: ${POSTGRES_PASSWORD}
       DB_HOST: ${DB_HOST}
       DB_PORT: ${DB_PORT}
-      API_PORT: ${API_PORT}
+      API_PORT: 3001
       NODE_ENV: ${NODE_ENV}
     volumes:
       - ./api:/usr/src/app
       - api_node_modules:/usr/src/app/node_modules
     command: sh -c "npm install --omit=dev && node server.js"
     ports:
-      - "127.0.0.1:3001:3001"
+      - "127.0.0.1:${API_PORT}:3001"
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/api/health',res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
@@ -594,15 +773,19 @@ services:
       - api
     environment:
       NODE_ENV: ${NODE_ENV}
-      PORT: 3000
+      PORT: ${APP_PORT}
+      # Ensure devDependencies (typescript, tailwind, etc.) are installed for build
+      NPM_CONFIG_PRODUCTION: "false"
+      NEXT_TELEMETRY_DISABLED: "1"
     volumes:
       - ./frontend:/usr/src/app
       - frontend_node_modules:/usr/src/app/node_modules
-    command: sh -c "npm install && npm run build && npx next start -H 0.0.0.0 -p 3000"
+    # Install libc6-compat to avoid Next.js SWC issues on Alpine, install devDeps, build, then start
+    command: sh -c "apk add --no-cache libc6-compat && npm ci --include=dev || npm install --include=dev && npm run build && npx next start -H 0.0.0.0 -p ${APP_PORT}"
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${APP_PORT}:${APP_PORT}"
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000',res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:${APP_PORT}',res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
