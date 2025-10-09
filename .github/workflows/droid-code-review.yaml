@@ -132,7 +132,7 @@ jobs:
 
           # Run droid exec with the prompt
           echo "Running code review analysis..."
-          droid exec --auto high -f prompt.txt --skip-permissions-unsafe
+          droid exec -f prompt.txt --skip-permissions-unsafe
 
           # Check if comments.json was created
           if [ ! -f comments.json ]; then
